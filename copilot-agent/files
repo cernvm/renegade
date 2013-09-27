@@ -1,0 +1,3 @@
+/usr/bin/copilot-agent
+/etc/copilot/*
+/etc/init.d/copilot-agent

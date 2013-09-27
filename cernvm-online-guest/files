@@ -1,0 +1,4 @@
+/etc/cernvm/keys/*
+/etc/init/cernvm-online-tty.conf
+/usr/sbin/cernvm-online-login.sh
+/usr/sbin/cernvm-online.sh

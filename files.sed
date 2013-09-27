@@ -1,0 +1,4 @@
+/^AUTOFILES/ {
+  r files
+  d
+}

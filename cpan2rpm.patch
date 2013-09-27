@@ -1,0 +1,1 @@
+perl -pi -e 's/Pod::Text/Pod::PlainText/' /usr/bin/cpan2rpm

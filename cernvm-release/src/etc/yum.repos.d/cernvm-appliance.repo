@@ -1,0 +1,19 @@
+[cernvm-meta-devel]
+name=CernVM Meta Devel
+baseurl=http://cernvm002.cern.ch/yum/cernvm/meta-devel/6/x86_64
+enabled=0
+
+[cernvm-meta]
+name=CernVM Meta
+baseurl=http://cernvm002.cern.ch/yum/cernvm/meta/6/x86_64
+enabled=0
+
+[cernvm-os]
+name=CernVM OS
+baseurl=http://cernvm002.cern.ch/yum/cernvm/os/6/x86_64
+enabled=0
+
+[cernvm-extras]
+name=CernVM Extras
+baseurl=http://cernvm002.cern.ch/yum/cernvm/extras/6/x86_64
+enabled=0

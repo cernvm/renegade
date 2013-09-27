@@ -1,0 +1,22 @@
+--- network.orig	2013-06-11 16:45:19.000000000 +0200
++++ network	2013-06-11 16:44:01.000000000 +0200
+@@ -304,8 +304,8 @@
+          exitCode=$?
+          if [ $exitCode != 0 ]; then
+             save_active_NIC_list
+-            run_network_script stop
+-            exitCode=$?
++            #run_network_script stop
++            exitCode=0
+          fi
+          ;;
+       resume-vm)
+@@ -330,7 +330,7 @@
+             # We shall use start not restart here. Otherwise we may not be able
+             # to bring back active list on distros like sles11sp2
+             # -- PR 816791
+-            run_network_script start
++            run_network_script restart
+             rescue_NIC
+             exitCode=$?
+          fi

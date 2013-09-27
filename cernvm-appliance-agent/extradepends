@@ -1,0 +1,2 @@
+Requires: mod_ssl
+Requires: mod_dnssd

@@ -1,0 +1,4 @@
+/^EXTRADEPENDS/ {
+  r extradepends
+  d
+}

@@ -1,0 +1,4 @@
+/^AUTODESC/ {
+  r description
+  d
+}
