@@ -4,13 +4,13 @@ include $(TOP)/config.mk
 EXTRA_SOURCES = $(RPMTOP)/SOURCES/default.cfg
 include $(TOP)/generic.mk
 
-SVN_SRC = $(shell basename `cat source`)
+GIT_SRC = $(shell basename `cat source` | sed 's/.git$$//')
 
-$(SVN_SRC): source
-	svn co `cat source`
+$(GIT_SRC): source
+	git clone `cat source`
 
-$(SOURCE_TARBALL): $(SVN_SRC) | $(RPMTOP)/SOURCES
-	cd $(SVN_SRC); \
+$(SOURCE_TARBALL): $(GIT_SRC) | $(RPMTOP)/SOURCES
+	cd $(GIT_SRC)/rpath; \
 	  tar -cvz --exclude=.svn --transform=s,^.,$(NAME)-$(VERSION), --show-transformed-names -f - . > $(SOURCE_TARBALL)	
 
 $(EXTRA_SOURCES): default.cfg | $(RPMTOP)/SOURCES
