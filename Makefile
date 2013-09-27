@@ -15,7 +15,6 @@ PACKAGES = \
 	cernvm-theme \
 	cernvm-release \
 	cernvm-online-guest \
-	cernvm-update \
 	condor \
 	copilot-agent \
 	copilot-jobmanager-generic \
