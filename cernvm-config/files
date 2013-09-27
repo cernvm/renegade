@@ -16,3 +16,4 @@
 /etc/dhcp/dhclient.d/*
 /etc/modprobe.d/*
 /usr/share/Modules/modulefiles/*
+/usr/bin/*
