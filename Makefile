@@ -25,7 +25,6 @@ PACKAGES = \
 	eos-client \
 	eos-fuse \
 	erlang \
-	etcd \
 	gcutil \
 	open-vm-tools \
 	perl-Amazon-EC2 \
