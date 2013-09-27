@@ -4,7 +4,10 @@ EXTRA_SOURCES = $(RPMTOP)/SOURCES/vmware-guestd.init
 EXTRA_SOURCES2 = $(RPMTOP)/SOURCES/network.patch
 include $(TOP)/generic.mk
 
-$(SOURCE_TARBALL): | $(RPMTOP)/SOURCES
+$(NAME)-$(VERSION)-1031360.tar.gz:
+	curl http://ecsft.cern.ch/dist/cernvm/$(NAME)-$(VERSION)-1031360.tar.gz > $(NAME)-$(VERSION)-1031360.tar.gz
+
+$(SOURCE_TARBALL): $(NAME)-$(VERSION)-1031360.tar.gz | $(RPMTOP)/SOURCES
 	cat $(NAME)-$(VERSION)-1031360.tar.gz > $(SOURCE_TARBALL)	
 
 $(EXTRA_SOURCES): $(EXTRA_SOURCES2) | $(RPMTOP)/SOURCES
