@@ -14,7 +14,6 @@ PACKAGES = \
 	cernvm-pam \
 	cernvm-theme \
 	cernvm-release \
-	cernvm-tools \
 	cernvm-online-guest \
 	cernvm-update \
 	condor \
