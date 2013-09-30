@@ -1,8 +1,3 @@
-[cernvm-meta-devel]
-name=CernVM Meta Devel
-baseurl=http://cernvm002.cern.ch/yum/cernvm/meta-devel/6/x86_64
-enabled=0
-
 [cernvm-meta]
 name=CernVM Meta
 baseurl=http://cernvm002.cern.ch/yum/cernvm/meta/6/x86_64
