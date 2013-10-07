@@ -1,5 +1,5 @@
 
-SOURCE_ROOT = $(TOP)/$(NAME)/pkg
+SOURCE_ROOT = $(TOP)/$(NAME)/$(NAME)-$(VERSION)
 SOURCE_DIST = ./*
 UPSTREAM_NAME = $(shell echo $(NAME) | sed 's/-i686$$//')
 UPSTREAM_RPM_32 = $(UPSTREAM_NAME)-$(VERSION)-$(RELEASE).i686.rpm
@@ -24,8 +24,7 @@ $(TREE_64): $(UPSTREAM_RPM_64)
 	cd $(TREE_64) && cat ../$(UPSTREAM_RPM_64) | rpm2cpio | cpio -id
 
 $(SOURCE_TARBALL): $(SOURCE_ROOT) version release | $(RPMTOP)/SOURCES
-	cd $(SOURCE_ROOT); \
-	  gtar -cvz --exclude=.svn --transform 's,^\.,$(NAME)-$(VERSION),' --show-transformed-names -f - $(SOURCE_DIST) > $(SOURCE_TARBALL)
+	gtar -cvz -f - `basename $(SOURCE_ROOT)` > $(SOURCE_TARBALL)
 
 $(SOURCE_ROOT): $(TREE_32) $(TREE_64)
 	rm -rf $(SOURCE_ROOT)

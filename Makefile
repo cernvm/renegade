@@ -55,13 +55,18 @@ PACKAGES = \
 	slim \
 	vboxguest
 
+PACKAGES-32BIT = $(wildcard *-i686)
+
 default: all
 	$(MAKE) repo
 
 $(PACKAGES)::
 	$(MAKE) TOP=$(TOP) -C $@ $(MAKECMDGOALS)
 
-all clean : $(PACKAGES)
+$(PACKAGES-32BIT)::
+	$(MAKE) TOP=$(TOP) -C $@ $(MAKECMDGOALS)
+
+all clean : $(PACKAGES) $(PACKAGES-32BIT)
 
 repo: $(YUM_REPO)/repodata/repomd.xml
 $(YUM_REPO)/repodata/repomd.xml: $(wildcard $(YUM_REPO)/*.rpm)

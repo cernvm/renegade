@@ -7,7 +7,7 @@ endif
 
 $(SOURCE_TARBALL): $(SOURCE_ROOT) version release | $(RPMTOP)/SOURCES
 	cd $(SOURCE_ROOT); \
-	  gtar -cvz --exclude=.svn --transform 's,^\.,$(NAME)-$(VERSION),' --show-transformed-names -f - $(SOURCE_DIST) > $(SOURCE_TARBALL)
+	  gtar -cvz --exclude=.svn --transform 's,^\.\([^.]\),$(NAME)-$(VERSION)\1,' --show-transformed-names -f - $(SOURCE_DIST) > $(SOURCE_TARBALL)
 
 $(SOURCE_ROOT): source
 	svn co `cat source`

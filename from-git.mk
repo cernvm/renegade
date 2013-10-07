@@ -10,7 +10,7 @@ endif
 
 $(SOURCE_TARBALL): $(SOURCE_ROOT) version release | $(RPMTOP)/SOURCES
 	cd $(SOURCE_ROOT)/$(GIT_BASE_DIR); \
-	  gtar -cvz --exclude=.git --transform 's,^\.,$(NAME)-$(VERSION),' --show-transformed-names -f - $(SOURCE_DIST) > $(SOURCE_TARBALL)
+	  gtar -cvz --exclude=.git --transform 's,^\.\([^.]\),$(NAME)-$(VERSION)\1,' --show-transformed-names -f - $(SOURCE_DIST) > $(SOURCE_TARBALL)
 
 $(SOURCE_ROOT): source
 	git clone `cat source`
