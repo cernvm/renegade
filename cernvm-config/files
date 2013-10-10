@@ -15,5 +15,6 @@
 /etc/cernvm
 /etc/dhcp/dhclient.d/*
 /etc/modprobe.d/*
+/etc/selinux/*
 /usr/share/Modules/modulefiles/*
 /usr/bin/*
