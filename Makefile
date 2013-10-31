@@ -13,6 +13,7 @@ PACKAGES = \
 	cernvm-appliance-agent \
 	cernvm-config \
 	cernvm-pam \
+	cernvm-patches \
 	cernvm-theme \
 	cernvm-release \
 	cernvm-online-guest \
