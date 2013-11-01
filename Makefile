@@ -6,6 +6,7 @@ PACKAGES = \
 	amiconfig-rpath \
 	amiconfig-cernvm \
 	amiconfig-hepix \
+	azure-cli \
 	bootlogd \
 	cctools \
 	CERN-CA-certs \
