@@ -1,5 +1,5 @@
 Summary: Helper package to fulfill OpenAFS kmod dependency
-Name: openafs-kmod
+Name: openafs-kernel
 Version: AUTO
 Release: AUTO%{?dist}
 Group: Applications/System

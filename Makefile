@@ -30,7 +30,7 @@ PACKAGES = \
 	eos-fuse \
 	erlang \
 	gcutil \
-	openafs-kmod \
+	openafs-kernel \
 	open-vm-tools \
 	perl-Amazon-EC2 \
 	perl-Copilot \
