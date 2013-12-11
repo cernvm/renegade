@@ -3,7 +3,23 @@ TOP = $(shell pwd)
 include $(TOP)/params.mk
 
 PACKAGES = \
-	cernvm-config 
+	acroread \
+	CASTOR-client \
+	castor-lib \
+	castor-stager-clientold \
+	castor-rtcopy-client \
+	castor-upv-client \
+	castor-rtcopy-messages \
+	castor-ns-client \
+	castor-stager-client \
+	castor-vdqm2-client \
+	castor-rfio-client \
+	castor-vmgr-client \
+	castor-devel \
+	castor-tape-client \
+	cernvm-config \
+	ld.so \
+	libc
 
 PACKAGES-32BIT = $(wildcard *-i686)
 
