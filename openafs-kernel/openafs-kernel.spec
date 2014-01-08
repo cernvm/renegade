@@ -6,6 +6,8 @@ Group: Applications/System
 License: GPL
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
+Provides: openafs-kmod = %{version}
+
 %description
 OpenAFS kernel module is part of the CernVM kernel
 
