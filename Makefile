@@ -4,6 +4,7 @@ include $(TOP)/params.mk
 
 PACKAGES = \
 	acroread \
+	CERN-CA-certs \
 	CASTOR-client \
 	castor-lib \
 	castor-stager-clientold \

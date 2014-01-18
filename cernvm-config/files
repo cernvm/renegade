@@ -3,6 +3,7 @@
 /etc/fstab
 /etc/workqueue.conf
 /etc/*.cernvm
+/etc/yum.conf
 /etc/cloud/*
 /etc/condor/*
 /etc/init.d/*
