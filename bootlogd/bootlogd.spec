@@ -22,7 +22,7 @@ make DESTDIR=%{buildroot} install
 %post
 chkconfig --del bootlogd-stop
 for i in 2 3 4 5; do
-  ln -s ../init.d/bootlogd-stop /etc/rc.d/rc${i}.d/S99Zbootlogd-stop
+  ln -s ../init.d/bootlogd-stop /etc/rc.d/rc${i}.d/S99zbootlogd-stop
 done
 
 %clean
