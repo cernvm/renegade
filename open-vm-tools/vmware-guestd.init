@@ -64,8 +64,8 @@ RETVAL=0
 start() {
     echo -n $"Starting VMware tools daemon: "
     modprobe -q vmmemctl
-    #[ -c /dev/vsock ] || modprobe -q vsock
-    #chmod 0666 /dev/vsock
+    modprobe -q vsock
+    chmod 0666 /dev/vsock
     for ethif in `ifconfig -a | grep ^eth | cut -d' ' -f1`; do
       ethtool -K $ethif tso on
     done
