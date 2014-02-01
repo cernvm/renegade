@@ -24,6 +24,7 @@ PACKAGES = \
 	copilot-jobmanager-generic \
 	copilot-util \
 	cpan2rpm \
+	cloud-scheduler \
 	ec2-api-tools \
 	ec2-ami-tools \
 	eos-client \
