@@ -20,6 +20,7 @@ BuildRequires: libXi-devel
 BuildRequires: libXrandr-devel
 BuildRequires: libXtst-devel
 BuildRequires: gtk2-devel
+BuildRequires: gtkmm24-devel
 BuildRequires: libdnet-devel
 BuildRequires: libicu-devel
 
@@ -27,13 +28,13 @@ BuildRequires: libicu-devel
 The open source version of VMware tools
 
 %prep
-%setup -q -n %{name}-%{version}-1031360
+%setup -q -n %{name}-%{version}-1280544
 
 %build
 ./configure --prefix=/usr \
+  --with-x \
   --without-kernel-modules \
   --without-root-privileges \
-  --without-gtkmm \
   --libdir=/usr/lib64 
 make %{?_smp_mflags}
 
