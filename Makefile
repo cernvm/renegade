@@ -31,6 +31,7 @@ PACKAGES = \
 	eos-fuse \
 	erlang \
 	gcutil \
+	nimbus-cloud-client \
 	openafs-kernel \
 	open-vm-tools \
 	perl-Amazon-EC2 \
