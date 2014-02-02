@@ -54,6 +54,7 @@ chmod +x %{buildroot}/etc/init.d/vmware-guestd
 # Fix suspend script: service network stop does not work in uCernVM
 cd %{buildroot}/etc/vmware-tools/scripts/vmware
 patch < %{_sourcedir}/network.patch
+rm -f network.orig
 
 %clean
 rm -rf %{buildroot}
