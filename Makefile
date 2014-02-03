@@ -59,6 +59,7 @@ PACKAGES = \
 	perl-XML-Encoding \
 	perl-XML-SAX-Expat \
 	perl-XML-SAX-Expat-Incremental \
+	retry_decorator \
 	slim \
 	vboxguest
 
