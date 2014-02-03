@@ -31,6 +31,7 @@ PACKAGES = \
 	eos-fuse \
 	erlang \
 	gcutil \
+	gsutil \
 	nimbus-cloud-client \
 	openafs-kernel \
 	open-vm-tools \
