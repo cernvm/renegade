@@ -1,7 +1,7 @@
 # google - Run account manager as a one-shot task prior to sshd starting.
 #
 #
-start on starting sshd
+start on cernvm
 task
 
 exec /usr/share/google/google_daemon/manage_accounts_wrapper.sh --interval=-1 --debug
