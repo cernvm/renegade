@@ -1,3 +1,4 @@
+AUTODEPS
 %define debug_package %{nil}
 
 Summary: AUTO

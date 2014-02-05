@@ -1,0 +1,179 @@
+Copyright 2013 Google Inc.
+All rights reserved.
+
+
+Google Cloud SDK - Release Notes
+
+
+0.9.16 (2013/01/28)
+====================
+  - Added Python2.6 compatibility.
+  - Added ability to symlink directly to scripts in the bin/ directory.
+  - Fixed bug in default setup of credentials when on a Compute Engine VM.
+
+
+0.9.15 (2013/01/15)
+====================
+  - Updated gsutil to 3.40
+  - Updated all AppEngine tools to 1.8.9
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Fixed broken PHP runtimes on Mac and Windows installs when running
+    the dev_appserver.
+  - Adding sh/cmd wrapper scripts for bq, gcutil, and gsutil for better PATH
+    handling on Windows.
+  - Fixed issue with failing `goapp build`
+
+
+0.9.14 (2013/12/17)
+====================
+  - 'gcloud sql' now available.
+    - Find out more: https://developers.google.com/cloud-sql/docs/cloud-sdk
+  - Added bash completion for gcloud commands.
+    - Choose 'yes' at the prompt during installation to add it to your bash
+      profile.
+  - Added 'gcloud version' command.
+  - More flexible support of virtual env installations.
+  - Fix for environments with protobuf installed.
+
+
+0.9.13.1 (2013/12/04)
+====================
+  - Validate queries to metadata server.
+
+
+0.9.13 (2013/11/19)
+===================
+  - Updated all AppEngine tools to 1.8.8
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Disabling site packages when running commands, to avoid library conflicts.
+
+
+0.9.12 (2013/11/06)
+===================
+  - Updated all AppEngine tools to 1.8.7
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Updated bq to 2.0.17
+  - A few usability improvements in the component manager and install flow.
+
+
+0.9.11 (2013/10/28)
+===================
+  - The Cloud SDK is now distributed using a new component manager.
+    - Download a small initial zip file, then install the tools you want on
+      demand.
+    - Updates to tools in the Cloud SDK are performed in-place, incrementally,
+      without the need to re-download the entire SDK.
+    - The component manager allows you to see when updates are available.
+    - Run 'gcloud components --help' for more information.
+  - New authentication features:
+    - The gauth command has been replaced by 'gcloud auth'.  Run
+      'gcloud auth --help' for more information.
+    - It now supports authenticating multiple users simultaneously.  Use
+      'gcloud config set account <account>' to choose your active account.
+  - For more information, please see:
+    https://developers.google.com/cloud/sdk/gettingstarted
+
+
+0.9.10 (2013/10/20)
+===================
+  - Upgraded all AppEngine tools to 1.8.6.
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Upgraded bq to 2.0.16.
+  - Upgraded gcutil to 1.9.1.
+  - A few improvements to the gauth web flow.
+
+
+0.9.9 (2013/09/26)
+===================
+  - Upgraded all AppEngine tools to 1.8.5.
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Upgraded bq to 2.0.15.
+  - Upgraded gcutil to 1.8.4.
+  - Upgraded gsutil to 3.37.
+
+
+0.9.8 (2013/08/27)
+===================
+  - Upgraded all AppEngine tools to 1.8.4.
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Upgraded gcutil to 1.8.3.
+  - Upgraded gsutil to 3.35.
+
+
+0.9.7 (2013/08/06)
+===================
+  - Upgraded all AppEngine tools to 1.8.3
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Upgraded gsutil to 3.34
+
+
+0.9.6 (2013/07/17)
+===================
+  - Upgraded all AppEngine tools to 1.8.2
+    - https://code.google.com/p/googleappengine/wiki/SdkReleaseNotes
+    - https://code.google.com/p/googleappengine/wiki/SdkForJavaReleaseNotes
+  - Upgraded bq to 2.0.14
+  - Upgraded gcutil to 1.8.2
+  - Upgraded gsutil to 3.33
+
+
+0.9.5 (2013/06/18)
+===================
+  - AppEngine Hotfix
+
+
+0.9.4 (2013/06/12)
+===================
+  - archive file name changed to google-cloud-sdk
+  - Upgraded all AppEngine tools to 1.8.1
+  - Upgraded gcutil to 1.8.1
+  - Upgraded gsutil to 3.31 (3.30 was never released)
+  - More improvements to gauth experience
+    - gauth now provides links to the new Cloud Console (for obtaining your
+      project id), as opposed to the API console
+    - Suppression of spurious error related to the Windows Registry
+
+
+0.9.3 (2013/05/24)
+===================
+  - Upgraded gcutil to 1.8.0
+  - Upgraded gsutil to 3.29
+
+
+0.9.2 (2013/05/07)
+===================
+  - Upgraded all AppEngine tools to 1.8.0
+  - Upgraded gsutil to 3.27
+  - Several improvements to gauth experience
+    - Will not re-run oauth2 flow if you already have valid credentials (you
+      can force re-auth with the --login flag)
+    - Added --set-project to change your current project without having to
+      re-auth
+    - Renamed gauth.py to gauth for simplicity
+    - gauth will warn you if there are older versions of the cloud tools on your
+      path.
+
+
+0.9.1 (2013/04/10)
+===================
+  - Fixed an issue with gauth that occurred when running a command before
+    credentials were created.
+
+
+0.9.0 (2013/04/09)
+===================
+  - Developer preview release of the Cloud SDK
+  - Includes command line tools for:
+    - App Engine
+    - BigQuery
+    - Compute Engine
+    - Cloud Storage
+    - Cloud SQL
+  - Includes the new gauth tool for one time common authentication for all tools

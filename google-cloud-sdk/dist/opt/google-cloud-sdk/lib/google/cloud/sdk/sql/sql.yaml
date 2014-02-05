@@ -1,0 +1,2 @@
+name: sql
+command_root_directory: [cloud, sdk, sql, tools]

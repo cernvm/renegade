@@ -13,6 +13,7 @@ PACKAGES = \
 	cern-cloudinit-modules \
 	cernvm-appliance-agent \
 	cernvm-config \
+	cernvm-gce \
 	cernvm-pam \
 	cernvm-patches \
 	cernvm-theme \
@@ -30,8 +31,7 @@ PACKAGES = \
 	eos-client \
 	eos-fuse \
 	erlang \
-	gcutil \
-	gsutil \
+	google-cloud-sdk \
 	nimbus-cloud-client \
 	openafs-kernel \
 	open-vm-tools \
@@ -59,7 +59,6 @@ PACKAGES = \
 	perl-XML-Encoding \
 	perl-XML-SAX-Expat \
 	perl-XML-SAX-Expat-Incremental \
-	retry_decorator \
 	slim \
 	vboxguest
 

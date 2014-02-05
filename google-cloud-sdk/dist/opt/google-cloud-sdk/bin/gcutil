@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# Copyright 2013 Google Inc. All Rights Reserved.
+#
+
+SCRIPT_LINK=$( readlink "$0" )
+WRAPPER_SCRIPT_DIR="$( cd -P "$( dirname "${SCRIPT_LINK:-$0}" )" && pwd -P )"
+
+if [ -z "${CLOUDSDK_PYTHON}" ]; then
+  CLOUDSDK_PYTHON="python"
+fi
+
+__cloudsdk_sitepackages=-S
+if [ ${CLOUDSDK_PYTHON_SITEPACKAGES} ]; then
+  __cloudsdk_sitepackages=
+fi
+
+$CLOUDSDK_PYTHON ${CLOUDSDK_PYTHON_ARGS-$__cloudsdk_sitepackages} ${WRAPPER_SCRIPT_DIR}/bootstrapping/gcutil.py "$@"
+exit $?

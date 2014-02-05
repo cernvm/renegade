@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# Copyright 2013 Google Inc. All Rights Reserved.
+#
+
+SCRIPT_LINK=$( readlink "$0" )
+WRAPPER_SCRIPT_DIR="$( cd -P "$( dirname "${SCRIPT_LINK:-$0}" )" && pwd -P )"
+
+LIB_DIR="$( dirname "${WRAPPER_SCRIPT_DIR}" )/lib"
+if [ -z "$PYTHONPATH" ]; then
+  export PYTHONPATH=${LIB_DIR}
+else
+  export PYTHONPATH=${LIB_DIR}:${PYTHONPATH}
+fi
+
+if [ -z "${CLOUDSDK_PYTHON}" ]; then
+  CLOUDSDK_PYTHON="python"
+fi
+
+__cloudsdk_sitepackages=-S
+if [ ${CLOUDSDK_PYTHON_SITEPACKAGES} ]; then
+  __cloudsdk_sitepackages=
+fi
+
+${CLOUDSDK_PYTHON} ${CLOUDSDK_PYTHON_ARGS-$__cloudsdk_sitepackages} ${WRAPPER_SCRIPT_DIR}/../lib/google/cloud/sdk/gcloud/gcloud.py "$@"
+exit_code=$?
+if [ $exit_code -ne 0 ]; then exit $exit_code; fi
