@@ -16,5 +16,6 @@
 /etc/dhcp/dhclient.d/*
 /etc/modprobe.d/*
 /etc/selinux/*
+/etc/xrdp/*
 /usr/share/Modules/modulefiles/*
 /usr/bin/*
