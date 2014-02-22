@@ -60,7 +60,8 @@ PACKAGES = \
 	perl-XML-SAX-Expat \
 	perl-XML-SAX-Expat-Incremental \
 	slim \
-	vboxguest
+	vboxguest \
+	VBoxManage
 
 PACKAGES-32BIT = $(wildcard *-i686)
 
