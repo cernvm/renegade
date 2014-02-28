@@ -41,6 +41,8 @@ kmk
 %install
 mkdir -p %{buildroot}/usr/bin
 cp -rv out/linux.amd64/release/bin/VBoxManage \
+  out/linux.amd64/release/bin/VBoxSVC \
+  out/linux.amd64/release/bin/VBoxXPCOMIPCD \
   out/linux.amd64/release/bin/VBoxDDU.so \
   out/linux.amd64/release/bin/VBoxRT.so \
   out/linux.amd64/release/bin/VBoxXPCOM.so \
