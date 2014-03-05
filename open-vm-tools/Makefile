@@ -5,7 +5,7 @@ EXTRA_SOURCES2 = $(RPMTOP)/SOURCES/network.patch
 include $(TOP)/generic.mk
 
 $(NAME)-$(VERSION)-1280544.tar.gz:
-	curl http://ecsft.cern.ch/dist/cernvm/$(NAME)-$(VERSION)-1280544.tar.gz > $(NAME)-$(VERSION)-1031360.tar.gz
+	curl http://ecsft.cern.ch/dist/cernvm/$(NAME)-$(VERSION)-1280544.tar.gz > $(NAME)-$(VERSION)-1280544.tar.gz
 
 $(SOURCE_TARBALL): $(NAME)-$(VERSION)-1280544.tar.gz | $(RPMTOP)/SOURCES
 	cat $(NAME)-$(VERSION)-1280544.tar.gz > $(SOURCE_TARBALL)	
