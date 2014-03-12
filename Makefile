@@ -28,6 +28,7 @@ PACKAGES = \
 	cloud-scheduler \
 	ec2-api-tools \
 	ec2-ami-tools \
+	elastiq \
 	eos-client \
 	eos-fuse \
 	erlang \
