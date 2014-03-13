@@ -32,7 +32,7 @@ rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-/usr/lib/python/site-packages/*
+/usr/lib/python2.4/site-packages/*
 /usr/lib/python2.6/site-packages/amiconfig
 %{_sbindir}/amiconfig
 %{_sysconfdir}/amiconfig/default.cfg

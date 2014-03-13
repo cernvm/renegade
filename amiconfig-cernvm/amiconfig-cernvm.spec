@@ -27,7 +27,7 @@ rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-/usr/lib/python/site-packages/*
+/usr/lib/python2.4/site-packages/*
 /usr/bin/amiconfig-mime
 /usr/sbin/amiconfig-helper
 /etc/init.d/amiconfig-cernvm

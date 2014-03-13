@@ -1,7 +1,7 @@
 
 RPMTOP = /data/rpmbuild
 YUMBASE = /var/www/yum/cernvm/extras
-UPSTREAM_VERSION = 6
+UPSTREAM_VERSION = 5
 HOSTARCH = x86_64
 
 DISTTAG = el$(UPSTREAM_VERSION)

@@ -12,7 +12,6 @@ BuildRequires: cmake
 BuildRequires: gcc
 BuildRequires: gcc-c++
 BuildRequires: make
-BuildRequires: xorg-x11-server-devel
 BuildRequires: fontconfig-devel
 BuildRequires: libXft-devel
 BuildRequires: libXrender-devel

@@ -9,6 +9,8 @@ Group: Applications/System
 License: GPL
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
+BuildRequires: libXScrnSaver-devel
+BuildRequires: uriparser-devel
 BuildRequires: gcc 
 BuildRequires: gcc-c++
 BuildRequires: make
@@ -28,7 +30,7 @@ BuildRequires: libicu-devel
 The open source version of VMware tools
 
 %prep
-%setup -q -n %{name}-%{version}-1280544
+%setup -q -n %{name}-%{version}-179896
 
 %build
 ./configure --prefix=/usr \
