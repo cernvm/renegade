@@ -61,6 +61,7 @@ PACKAGES = \
 	perl-XML-SAX-Expat \
 	perl-XML-SAX-Expat-Incremental \
 	slim \
+	vaf-client \
 	vboxguest \
 	VBoxManage
 
