@@ -61,9 +61,11 @@ PACKAGES = \
 	perl-XML-SAX-Expat \
 	perl-XML-SAX-Expat-Incremental \
 	slim \
+	uriparser \
 	vaf-client \
 	vboxguest \
-	VBoxManage
+	VBoxManage \
+	vmware-tools-plugins-unity
 
 PACKAGES-32BIT = $(wildcard *-i686)
 

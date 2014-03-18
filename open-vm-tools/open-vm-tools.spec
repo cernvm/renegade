@@ -23,6 +23,7 @@ BuildRequires: gtk2-devel
 BuildRequires: gtkmm24-devel
 BuildRequires: libdnet-devel
 BuildRequires: libicu-devel
+BuildRequires: uriparser
 
 %description
 The open source version of VMware tools
