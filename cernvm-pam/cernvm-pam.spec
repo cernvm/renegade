@@ -9,7 +9,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildRequires: gcc
 BuildRequires: pam-devel
-Requires: cernvm-online-guest
+Requires: cernvm-online-guest >= 1.7
 
 %description
 PAM Module to handle cernvm-online contextualization during console login
