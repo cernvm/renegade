@@ -9,6 +9,9 @@ Group: Applications/System
 License: GPL
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
+Provides: libhgfs.so()(64bit)
+Provides: libvmtools.so()(64bit)
+
 BuildRequires: gcc 
 BuildRequires: gcc-c++
 BuildRequires: make
