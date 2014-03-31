@@ -60,6 +60,7 @@ PACKAGES = \
 	perl-XML-Encoding \
 	perl-XML-SAX-Expat \
 	perl-XML-SAX-Expat-Incremental \
+	shoal-client \
 	slim \
 	uriparser \
 	vaf-client \

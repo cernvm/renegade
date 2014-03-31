@@ -18,4 +18,5 @@
 /etc/selinux/*
 /etc/xrdp/*
 /usr/share/Modules/modulefiles/*
+/etc/grid-security/*
 /usr/bin/*
