@@ -5,6 +5,7 @@ NAME = $(shell basename $(CURDIR))
 ARCH = $(shell test -f arch && cat arch || echo $(HOSTARCH))
 VERSION = $(shell cat version)
 RELEASE = $(shell cat release)
+CERNVM_EPOCH = 0
 
 SOURCE_TARBALL = $(RPMTOP)/SOURCES/$(NAME)-$(VERSION).tar.gz
 SPEC_FILE = $(RPMTOP)/SPECS/$(NAME).spec

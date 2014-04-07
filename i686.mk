@@ -6,6 +6,7 @@ UPSTREAM_RPM_32 = $(UPSTREAM_NAME)-$(VERSION)-$(RELEASE).i686.rpm
 UPSTREAM_RPM_64 = $(UPSTREAM_NAME)-$(VERSION)-$(RELEASE).x86_64.rpm
 TREE_32 = 32-$(VERSION)-$(RELEASE)
 TREE_64 = 64-$(VERSION)-$(RELEASE)
+CERNVM_EPOCH = 1
 
 $(UPSTREAM_RPM_32): version release
 	yumdownloader $(UPSTREAM_NAME)-$(VERSION)-$(RELEASE) --archlist=i686
@@ -26,7 +27,10 @@ $(TREE_64): $(UPSTREAM_RPM_64)
 $(SOURCE_TARBALL): $(SOURCE_ROOT) version release | $(RPMTOP)/SOURCES
 	gtar -cvz -f - `basename $(SOURCE_ROOT)` > $(SOURCE_TARBALL)
 
-$(SOURCE_ROOT): $(TREE_32) $(TREE_64)
+extraprovides:
+	echo "Provides: $(UPSTREAM_NAME)(x86-32)" > extraprovides 
+
+$(SOURCE_ROOT): $(TREE_32) $(TREE_64) extraprovides
 	rm -rf $(SOURCE_ROOT)
 	mkdir $(SOURCE_ROOT)
 	cd $(TREE_32) && gtar -cv -f - `for f in $$(find . ! -type d); do if [ ! -f ../$(TREE_64)/$$f ]; then echo -n "$$f "; fi; done` | \

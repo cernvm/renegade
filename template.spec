@@ -1,5 +1,8 @@
 AUTODEPS
 %define debug_package %{nil}
+%if 0%{?cernvm_epoch}
+Epoch: %{cernvm_epoch}
+%endif
 
 Summary: AUTO
 Name: AUTO
