@@ -17,7 +17,8 @@ except:
   sys.exit(0)
 import os
 import re
-
+import json
+import urllib2
 
 # In case this runs to early during the boot, the PATH environment can still be unset. Let's define each necessary command's path
 # Using subprocess calls so it raises exceptions directly from the child process to the parent
@@ -129,23 +130,80 @@ def conf_node(node_f, params, lines):
     flocal_new.writelines(lines)
     flocal_new.close()
 
-def handle(_name, cfg, cloud, log, _args):
-  
-    if 'ganglia' not in cfg:
-        return
-        
-    ganglia_cfg = cfg['ganglia']
 
-    if 'install' in ganglia_cfg:
-        if ganglia_cfg['install'] == True:
-            subprocess.check_call([YUM_cmd,'-y','install','ganglia','ganglia-gmond'])
-        
-    gmond_conf_file = '/etc/ganglia/gmond.conf'
+def atlas_auto_cfg(clines):
+    GangliaHeadnode = 'http://agm.cern.ch' 	# Default Ganglia collector
+
+    gsite_line = [ l for l in clines if l.startswith('GSITE') ]
+    gsite = str(gsite_line[0])
+    if not gsite:
+        print 'GSITE is not set in Condor cfg. Exiting'
+        return
+
+    PandaResource = gsite.replace(" ","").split('=')[1].replace('"','').replace('\n','')
+    atlas_JSON_url = GangliaHeadnode + "/atlas-gmond-cluster-cfg.json"
+    atlas_gmond_clusters = json.load(urllib2.urlopen(atlas_JSON_url))
+
+    if PandaResource in atlas_gmond_clusters:
+        # Basic info
+        try:
+            gmond_cluster = str(atlas_gmond_clusters[PandaResource]['ClusterName'])
+            gmond_port = atlas_gmond_clusters[PandaResource]['Port']
+        except KeyError:
+            print "JSON doesn't contain necessary info for gmond auto config"
+            return
+        except:
+            raise
  
-    flocal = open(gmond_conf_file, 'r')     # Open to read all the file and then close it
-    node_lines = flocal.readlines()
-    flocal.close()
+        if 'Host' in atlas_gmond_clusters[PandaResource]:
+            gmond_host = atlas_gmond_clusters[PandaResource]['Host']
+        else:
+            gmond_host = 'agm.cern.ch'
+    else:
+        print "%s Panda resource is not listed in ATLAS Ganglia cluster list. Exiting" % PandaResource
+        return 
+    
+    gmond_conf_file = '/etc/ganglia/gmond.conf'
+    with open(gmond_conf_file, 'r+') as g:
+        glines = g.readlines()
+        glines = [word.replace('mcast_join','#mcast_join') for word in glines]
+        for i in range(0,len(glines)):
+            if 'name = "unspecified"' in glines[i]:
+                glines[i] = '  name = "%s"\n' % gmond_cluster
+            if 'udp_send_channel {' in glines[i]:
+                glines[i] = 'udp_send_channel { \n  host = %s\n' % gmond_host
+            if 'port =' in glines[i]:
+                glines[i] = '  port = %s\n' % str(gmond_port)
+                break
+        g.seek(0)
+        g.writelines(glines)
+         
+
+def handle(_name, cfg, cloud, log, _args):
+    if 'ganglia' not in cfg:
+        condor_cfg = '/etc/condor/condor_config.local'
+        try:
+            with open(condor_cfg, 'r') as f:
+                clines = f.readlines()
+        except IOError:
+            print "Ganglia's auto-setup for gmond relies on Condor config file."
+            raise
+        except:
+            return
+        atlas_auto_cfg(clines)
+    else:        
+        ganglia_cfg = cfg['ganglia']
+
+        if 'install' in ganglia_cfg:
+            if ganglia_cfg['install'] == True:
+                subprocess.check_call([YUM_cmd,'-y','install','ganglia','ganglia-gmond'])
         
-    conf_node(gmond_conf_file, ganglia_cfg, node_lines)
+        gmond_conf_file = '/etc/ganglia/gmond.conf'
+     
+        flocal = open(gmond_conf_file, 'r')     # Open to read all the file and then close it
+        node_lines = flocal.readlines()
+        flocal.close()
+        
+        conf_node(gmond_conf_file, ganglia_cfg, node_lines)
         
     os.system('/etc/init.d/gmond restart ; /sbin/chkconfig gmond on')
