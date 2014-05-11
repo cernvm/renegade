@@ -1,0 +1,4 @@
+/^EXTRAPROVIDES/ {
+  r extraprovides
+  d
+}
