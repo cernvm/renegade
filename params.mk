@@ -1,6 +1,6 @@
 
 RPMTOP = /data/rpmbuild
-YUMBASE = /var/www/yum/cernvm/extras
+YUMBASE = /data/yum/cernvm/extras
 UPSTREAM_VERSION = 6
 HOSTARCH = x86_64
 
