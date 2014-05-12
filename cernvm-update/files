@@ -1,5 +1,0 @@
-/usr/bin/*
-/var/lib/cernvm-update
-/etc/cernvm/cernvm.d/*
-/etc/cron.daily/*
-/usr/share/cernvm-update

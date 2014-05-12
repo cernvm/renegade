@@ -1,9 +1,0 @@
-/etc/xdg/*
-/etc/skel/.config/*
-/usr/etc/splashy/config.xml
-/usr/share/themes/CernVM
-/usr/share/splashy/themes/cernvm
-/usr/share/icons/CernVM
-/usr/share/gdm/themes/cernvm
-/usr/share/slim/themes/cernvm
-/usr/share/pixmaps/cernvm
