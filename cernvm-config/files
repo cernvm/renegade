@@ -3,6 +3,7 @@
 /etc/fstab
 /etc/workqueue.conf
 /etc/*.cernvm
+/etc/grid-security
 /etc/cloud/*
 /etc/condor/*
 /etc/init.d/*

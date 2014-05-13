@@ -12,6 +12,7 @@ PACKAGES = \
 	cernvm-config \
 	cernvm-gce \
 	cernvm-pam \
+	cernvm-patches \
 	cernvm-theme \
 	cernvm-release \
 	cernvm-online-guest \
