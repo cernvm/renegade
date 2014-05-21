@@ -19,6 +19,7 @@ PACKAGES = \
 	castor-devel \
 	castor-tape-client \
 	cernvm-config \
+	condor \
 	ld.so \
 	libc
 
