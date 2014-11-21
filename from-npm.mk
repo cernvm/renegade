@@ -4,9 +4,15 @@ NPM_DIST = $(NAME)-$(VERSION)
 NPM_TARBALL = $(NAME)-$(VERSION).tar.gz
 
 $(NPM_DIST): $(NPM_SOURCE)
+	rm -rf $(NPM_DIST)
 	cd $(NPM_SOURCE) && npm -g -q --production --prefix=../$(NPM_DIST)/usr install .
 
 $(NPM_TARBALL): $(NPM_DIST)
+	rm -f $(NPM_TARBALL)
+	rm -f $(NPM_DIST)/usr/lib/node_modules/azure-cli/node_modules/azure-storage/node_modules/xml2js/node_modules/sax/examples/switch-bench.js
+	rm -f $(NPM_DIST)/usr/lib/node_modules/azure-cli/node_modules/azure-common/node_modules/xml2js/node_modules/sax/examples/switch-bench.js
+	rm -f $(NPM_DIST)/usr/lib/node_modules/azure-cli/node_modules/azure/node_modules/azure-storage/node_modules/xml2js/node_modules/sax/examples/switch-bench.js
+	rm -f $(NPM_DIST)/usr/lib/node_modules/azure-cli/node_modules/azure-storage-legacy/node_modules/azure-common/node_modules/xml2js/node_modules/sax/examples/switch-bench.js
 	tar -czf $(NPM_TARBALL) $(NPM_DIST)
 
 $(SOURCE_TARBALL): version $(NPM_TARBALL) | $(RPMTOP)/SOURCES
