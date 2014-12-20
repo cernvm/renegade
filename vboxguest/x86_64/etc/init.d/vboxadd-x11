@@ -68,6 +68,9 @@ x11conf_files="/etc/X11/xorg.conf /etc/X11/xorg.conf-4 /etc/X11/.xorg.conf \
     /usr/X11R6/etc/X11/XF86Config /usr/X11R6/lib/X11/XF86Config-4 \
     /usr/X11R6/lib/X11/XF86Config"
 
+# Find own version
+vbox_version=$(VBoxControl --version)
+
 if [ -f /etc/arch-release ]; then
     system=arch
 elif [ -f /etc/redhat-release ]; then
@@ -259,6 +262,9 @@ EOF
 start()
 {
     # Todo: check configuration and correct it if necessary
+    if [ ! -f /var/lib/vboxguest/setup-${vbox_version} ]; then
+      setup
+    fi
     return 0
 }
 
@@ -551,6 +557,11 @@ EOF
     # And set up VBoxClient to start when the X session does
     install_x11_startup_app "$lib_dir/98vboxadd-xclient" "$share_dir/vboxclient.desktop" VBoxClient VBoxClient-all ||
         fail "See the log file $LOG for more information."
+    
+    # Add setup marker 
+    mkdir -p /var/lib/vboxguest
+    touch "/var/lib/vboxguest/setup-${vbox_version}"
+    
     succ_msg
 }
 

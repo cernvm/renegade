@@ -1,0 +1,34 @@
+--- vboxadd-x11	2014-12-19 23:34:06.196022571 +0100
++++ vboxadd-x11.patched	2014-12-20 19:19:38.526024691 +0100
+@@ -68,6 +68,9 @@
+     /usr/X11R6/etc/X11/XF86Config /usr/X11R6/lib/X11/XF86Config-4 \
+     /usr/X11R6/lib/X11/XF86Config"
+ 
++# Find own version
++vbox_version=$(VBoxControl --version)
++
+ if [ -f /etc/arch-release ]; then
+     system=arch
+ elif [ -f /etc/redhat-release ]; then
+@@ -259,6 +262,9 @@
+ start()
+ {
+     # Todo: check configuration and correct it if necessary
++    if [ ! -f /var/lib/vboxguest/setup-${vbox_version} ]; then
++      setup
++    fi
+     return 0
+ }
+ 
+@@ -551,6 +557,11 @@
+     # And set up VBoxClient to start when the X session does
+     install_x11_startup_app "$lib_dir/98vboxadd-xclient" "$share_dir/vboxclient.desktop" VBoxClient VBoxClient-all ||
+         fail "See the log file $LOG for more information."
++    
++    # Add setup marker 
++    mkdir -p /var/lib/vboxguest
++    touch "/var/lib/vboxguest/setup-${vbox_version}"
++    
+     succ_msg
+ }
+ 
