@@ -26,6 +26,7 @@ PACKAGES = \
 	copilot-util \
 	cpan2rpm \
 	cloud-scheduler \
+	docker-cernvm \
 	ec2-api-tools \
 	ec2-ami-tools \
 	elastiq \
