@@ -1,3 +1,0 @@
-default: don't make network tests
-perl-Filter-Template required
-POE/Component/SSLify.pm required

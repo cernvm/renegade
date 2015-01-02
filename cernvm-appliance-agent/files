@@ -1,5 +1,0 @@
-/usr/libexec/cernvm-appliance-agent
-/usr/share/doc/cernvm-appliance-agent
-/etc/init.d/cernvm-appliance-agent
-/etc/sudoers.d/10_cernvm-appliance-agent
-/etc/cernvm-appliance-agent

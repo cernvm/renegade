@@ -1,3 +1,0 @@
-perl -pi -e 's/Pod::Text/Pod::PlainText/' /usr/bin/cpan2rpm
-
-sed -i -e 's/%{__perl} Build.PL/%{__perl} Build.PL --installdirs vendor/' /usr/bin/cpan2rpm 
