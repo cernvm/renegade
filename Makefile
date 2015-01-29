@@ -13,6 +13,7 @@ PACKAGES = \
 	cern-cloudinit-modules \
 	cernvm-appliance-agent \
 	cernvm-config \
+	cernvm-fork \
 	cernvm-gce \
 	cernvm-pam \
 	cernvm-patches \
