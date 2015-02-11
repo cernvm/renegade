@@ -5,10 +5,11 @@ EXTRA_SOURCES = $(RPMTOP)/SOURCES/slim.conf
 include $(TOP)/generic.mk
 
 $(SOURCE_TARBALL): | $(RPMTOP)/SOURCES
-	curl http://pkgs.fedoraproject.org/repo/pkgs/slim/slim-1.3.5.tar.gz/1153e6993f9c9333e4cf745411d03472/$(NAME)-$(VERSION).tar.gz > $(SOURCE_TARBALL)	
+	curl http://pkgs.fedoraproject.org/repo/pkgs/slim/slim-$(VERSION).tar.gz/d40d256394f9ef34cef34d2aa9cb52e6/$(NAME)-$(VERSION).tar.gz > $(SOURCE_TARBALL)	
 
-$(EXTRA_SOURCES): slim.conf | $(RPMTOP)/SOURCES
+$(EXTRA_SOURCES): slim.conf slimlock.conf | $(RPMTOP)/SOURCES
 	cp slim.conf $(EXTRA_SOURCES)
+	cp slimlock.conf $(RPMTOP)/SOURCES/slimlock.conf
 
 $(SPEC_FILE): slim.spec version release | $(RPMTOP)/SPECS
 	cat slim.spec | \

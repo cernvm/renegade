@@ -16,6 +16,7 @@ BuildRequires: libxslt-devel
 BuildRequires: libIDL-devel
 BuildRequires: curl-devel
 BuildRequires: libcap-devel
+BuildRequires: libstdc++-static
 
 %description
 The VBoxManage utility from VirtualBox.  Useful to convert VM image files.
