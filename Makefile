@@ -10,7 +10,6 @@ PACKAGES = \
 	bootlogd \
 	cctools \
 	CERN-CA-certs \
-	cern-cloudinit-modules \
 	cernvm-appliance-agent \
 	cernvm-config \
 	cernvm-fork \
