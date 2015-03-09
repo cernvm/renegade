@@ -9,6 +9,7 @@
 /etc/pam.d/*
 /etc/squid/*
 /etc/profile.d/*
+/etc/tune-profiles/cernvm
 /etc/ssh/*
 /etc/X11/*
 /etc/sysconfig/*
