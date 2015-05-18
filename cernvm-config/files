@@ -5,6 +5,7 @@
 /etc/*.cernvm
 /etc/cloud/*
 /etc/condor/*
+/etc/cvmfs/*
 /etc/init.d/*
 /etc/pam.d/*
 /etc/squid/*
