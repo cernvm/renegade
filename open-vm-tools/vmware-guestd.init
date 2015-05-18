@@ -71,7 +71,7 @@ start() {
     done
     if [ -d /proc/fs/vmblock ]; then
       rmmod vmblock
-    ifi
+    fi
     rm -rf /tmp/VMwareDnD
     mkdir /tmp/VMwareDnD
     chmod 1777 /tmp/VMwareDnD
