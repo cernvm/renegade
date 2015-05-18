@@ -60,7 +60,7 @@ cd %{buildroot}/etc/vmware-tools/scripts/vmware
 patch < %{_sourcedir}/network.patch
 rm -f network.orig
 
-chmod u+s /usr/bin/vmware-user-suid-wrapper
+chmod u+s %{buildroot}/usr/bin/vmware-user-suid-wrapper
 
 %clean
 rm -rf %{buildroot}
