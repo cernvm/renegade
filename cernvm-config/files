@@ -14,6 +14,7 @@
 /etc/ssh/*
 /etc/X11/*
 /etc/sysconfig/*
+/etc/udev/*
 /etc/cernvm
 /etc/dhcp/dhclient.d/*
 /etc/modprobe.d/*
