@@ -60,6 +60,8 @@ cd %{buildroot}/etc/vmware-tools/scripts/vmware
 patch < %{_sourcedir}/network.patch
 rm -f network.orig
 
+chmod u+s %{buildroot}/usr/bin/vmware-user-suid-wrapper
+
 %clean
 rm -rf %{buildroot}
 
@@ -78,5 +80,7 @@ rm -rf %{buildroot}
 /etc/init.d/vmware-guestd
 
 %changelog
+* Mon May 15 2015 Jakob Blomer <jblomer@cern.ch> - 9.4.0-9
+- Ensure suid flag of vmware-user-suid-wrapper
 * Thu May 14 2013 Jakob Blomer <jblomer@cern.ch> - 9.2.3
 - Initial package

@@ -69,11 +69,14 @@ start() {
     for ethif in `ifconfig -a | grep ^eth | cut -d' ' -f1`; do
       ethtool -K $ethif tso on
     done
+    if [ -d /proc/fs/vmblock ]; then
+      rmmod vmblock
+    fi
     rm -rf /tmp/VMwareDnD
     mkdir /tmp/VMwareDnD
     chmod 1777 /tmp/VMwareDnD
-    chmod 0666 /proc/fs/vmblock/dev
-    mount -t vmblock none /proc/fs/vmblock/mountPoint
+    mkdir -p /var/run/vmblock-fuse
+    vmware-vmblock-fuse -o subtype=vmware-vmblock,default_permissions,allow_other /var/run/vmblock-fuse
     $STARTPROC /usr/bin/vmtoolsd $OPTIONS
     RETVAL=$?
     showstatus $RETVAL
