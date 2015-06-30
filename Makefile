@@ -8,6 +8,8 @@ PACKAGES = \
 	cernvm-config \
 	cernvm-pam \
 	cernvm-theme \
+	ec2-api-tools \
+	ec2-ami-tools \
 	slim \
 	VBoxManage
 
