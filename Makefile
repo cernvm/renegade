@@ -5,6 +5,7 @@ include $(TOP)/params.mk
 PACKAGES = \
 	azure-cli \
 	CERN-CA-certs \
+	cernvm-config \
 	cernvm-pam \
 	cernvm-theme \
 	slim \

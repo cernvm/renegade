@@ -5,13 +5,16 @@
 /etc/*.cernvm
 /etc/cloud/*
 /etc/condor/*
+/etc/cvmfs/*
 /etc/init.d/*
 /etc/pam.d/*
 /etc/squid/*
+/etc/polkit-1/*
 /etc/profile.d/*
 /etc/ssh/*
 /etc/X11/*
 /etc/sysconfig/*
+/etc/tune-profiles/*
 /etc/cernvm
 /etc/dhcp/dhclient.d/*
 /etc/modprobe.d/*
