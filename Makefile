@@ -10,6 +10,7 @@ PACKAGES = \
 	cernvm-theme \
 	ec2-api-tools \
 	ec2-ami-tools \
+	perl-Amazon-EC2 \
 	slim \
 	VBoxManage
 
