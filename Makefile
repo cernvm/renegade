@@ -11,6 +11,8 @@ PACKAGES = \
 	ec2-api-tools \
 	ec2-ami-tools \
 	perl-Amazon-EC2 \
+	perl-Text-Aligner \
+	perl-Text-Table \
 	slim \
 	VBoxManage
 
