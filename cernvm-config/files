@@ -9,7 +9,7 @@
 /etc/init.d/*
 /etc/pam.d/*
 /etc/squid/*
-/etc/polkit-1/*
+/etc/polkit-1/localauthority/*
 /etc/profile.d/*
 /etc/ssh/*
 /etc/X11/*
