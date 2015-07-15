@@ -35,6 +35,8 @@ PACKAGES = \
 	eos-client \
 	eos-fuse \
 	erlang \
+	glideinwms-vm-core \
+	glideinwms-vm-cernvm \
 	google-cloud-sdk \
 	nimbus-cloud-client \
 	openafs-kernel \
