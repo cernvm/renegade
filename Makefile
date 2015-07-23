@@ -71,6 +71,7 @@ PACKAGES = \
 	vaf-client \
 	vboxguest \
 	VBoxManage \
+	WALinuxAgent \
 	vmware-tools-plugins-unity
 
 PACKAGES-32BIT = $(wildcard *-i686)
