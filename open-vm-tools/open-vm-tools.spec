@@ -27,24 +27,35 @@ BuildRequires: gtkmm24-devel
 BuildRequires: libdnet-devel
 BuildRequires: libicu-devel
 BuildRequires: uriparser
+BuildRequires: xerces-c-devel
+BuildRequires: libmspack-devel
+BuildRequires: procps-ng-devel
+BuildRequires: automake
+BuildRequires: autoconf
+BuildRequires: libtool
+BuildRequires: doxygen
 
 %description
 The open source version of VMware tools
 
 %prep
-%setup -q -n %{name}-%{version}-1280544
+%setup -q -n %{name}-%{name}-%{version}-3000743
 
 %build
+cd open-vm-tools
+autoreconf -i
 ./configure --prefix=/usr \
   --with-x \
+  --disable-tests \
   --without-kernel-modules \
   --without-root-privileges \
-  --libdir=/usr/lib64 
+  --without-xmlsecurity \
+  --libdir=/usr/lib64
 make %{?_smp_mflags}
 
 %install
+cd open-vm-tools
 make DESTDIR=%{buildroot} install
-
 
 rm -f %{buildroot}/sbin/mount.vmhgfs
 ln -s /usr/sbin/mount.vmhgfs %{buildroot}/sbin/mount.vmhgfs
@@ -58,7 +69,6 @@ chmod +x %{buildroot}/etc/init.d/vmware-guestd
 # Fix suspend script: service network stop does not work in uCernVM
 cd %{buildroot}/etc/vmware-tools/scripts/vmware
 patch < %{_sourcedir}/network.patch
-rm -f network.orig
 
 chmod u+s %{buildroot}/usr/bin/vmware-user-suid-wrapper
 
@@ -80,6 +90,8 @@ rm -rf %{buildroot}
 /etc/init.d/vmware-guestd
 
 %changelog
+* Sat Oct 10 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-1
+- Update to reflect new open-vm-tools version
 * Mon May 15 2015 Jakob Blomer <jblomer@cern.ch> - 9.4.0-9
 - Ensure suid flag of vmware-user-suid-wrapper
 * Thu May 14 2013 Jakob Blomer <jblomer@cern.ch> - 9.2.3
