@@ -2,6 +2,7 @@
 /.ucernvm_pinfiles
 /etc/fstab
 /etc/workqueue.conf
+/etc/lxdm/*
 /etc/*.cernvm
 /etc/cloud/*
 /etc/condor/*
