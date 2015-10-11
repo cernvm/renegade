@@ -50,7 +50,8 @@ autoreconf -i
   --without-kernel-modules \
   --without-root-privileges \
   --without-xmlsecurity \
-  --libdir=/usr/lib64
+  --libdir=/usr/lib64 \
+  --sysconfdir=/etc
 make %{?_smp_mflags}
 
 %install
@@ -80,7 +81,8 @@ rm -rf %{buildroot}
 %doc /usr/share/doc/*
 /usr/share/open-vm-tools
 /usr/bin/*
-/usr/etc/*
+/etc/xdg/autostart/vmware-user.desktop
+/etc/pam.d/vmtoolsd
 /usr/include/*
 /usr/lib64/*
 /usr/sbin/*
@@ -90,7 +92,7 @@ rm -rf %{buildroot}
 /etc/init.d/vmware-guestd
 
 %changelog
-* Sat Oct 10 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-1
+* Sat Oct 10 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-3
 - Update to reflect new open-vm-tools version
 * Mon May 15 2015 Jakob Blomer <jblomer@cern.ch> - 9.4.0-9
 - Ensure suid flag of vmware-user-suid-wrapper
