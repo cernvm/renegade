@@ -11,11 +11,11 @@ PACKAGES = \
 	cernvm-update \
 	ec2-api-tools \
 	ec2-ami-tools \
+	lxdm \
 	open-vm-tools \
 	perl-Amazon-EC2 \
 	perl-Text-Aligner \
 	perl-Text-Table \
-	slim \
 	VBoxManage
 
 #PACKAGES = \
