@@ -7,6 +7,7 @@ PACKAGES = \
 	CERN-CA-certs \
 	cernvm-config \
 	cernvm-pam \
+	cernvm-release \
 	cernvm-theme \
 	cernvm-update \
 	ec2-api-tools \
