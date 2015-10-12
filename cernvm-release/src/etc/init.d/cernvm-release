@@ -39,9 +39,9 @@ writedistrorelease () {
 writeissue () {
     # find out network addresses
     # FIXME: figure out ipv6 support
-    ip_addr="$(/sbin/ifconfig | grep "inet addr" | grep -v "127.0.0.1" | awk \
-             '{print $2 }' | awk -F: '{ print $2 }' | head -n 1)"
-    netcount="$(/sbin/ifconfig | grep "inet addr" | grep -v "127.0.0.1" | wc -l)"
+    ip_addr="$(/sbin/ifconfig | grep "inet " | grep -v "127.0.0.1" | awk \
+             '{print $2 }' | head -n 1)"
+    netcount="$(/sbin/ifconfig | grep "inet " | grep -v "127.0.0.1" | wc -l)"
 
     # do we have networking yet?
     if [ "${netcount}" -ge 1 ];then
