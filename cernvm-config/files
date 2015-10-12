@@ -15,7 +15,7 @@
 /etc/ssh/*
 /etc/X11/*
 /etc/sysconfig/*
-/etc/tune-profiles/*
+/etc/tuned/*
 /etc/cernvm
 /etc/dhcp/dhclient.d/*
 /etc/modprobe.d/*
@@ -24,3 +24,4 @@
 /usr/share/Modules/modulefiles/*
 /etc/grid-security/*
 /usr/bin/*
+/usr/lib/tuned/cernvm
