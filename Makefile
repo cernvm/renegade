@@ -10,6 +10,7 @@ PACKAGES = \
 	cernvm-release \
 	cernvm-theme \
 	cernvm-update \
+	docker-cernvm \
 	ec2-api-tools \
 	ec2-ami-tools \
 	lxdm \
