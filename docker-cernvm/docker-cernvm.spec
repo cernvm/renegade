@@ -28,10 +28,6 @@ rm -rf %{buildroot}
 if ! getent group docker >/dev/null 2>&1; then
   groupadd -r docker -g 200
 fi
-if ! chkconfig docker --list >/dev/null 2>&1; then
-  chkconfig --add docker
-  chkconfig docker off
-fi
 
 %postun
 # TODO: remove docker group.  Could this change the gid during upgrades?
@@ -43,5 +39,7 @@ fi
 %config %{_sysconfdir}/docker.conf
 
 %changelog
+* Tue Oct 13 2015 Jakob Blomer <jblomer@cern.ch> - 1.8.3-2
+- Remove chkconfig stuff
 * Sun Dec 21 2014 Jakob Blomer <jblomer@cern.ch> - 1.4.1-1
 - Initial package
