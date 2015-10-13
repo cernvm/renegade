@@ -14,6 +14,7 @@ PACKAGES = \
 	ec2-api-tools \
 	ec2-ami-tools \
 	lxdm \
+	open-afs-kernel \
 	open-vm-tools \
 	perl-Amazon-EC2 \
 	perl-Text-Aligner \
