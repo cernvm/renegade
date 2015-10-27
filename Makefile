@@ -22,7 +22,6 @@ PACKAGES = \
 	cernvm-update \
 	cvmfs \
 	cvmfs-devel \
-	condor \
 	copilot-agent \
 	copilot-jobmanager-generic \
 	copilot-util \

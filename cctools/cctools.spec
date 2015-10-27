@@ -65,6 +65,7 @@ make %{?_smp_mflags}
 %install
 make CCTOOLS_INSTALL_DIR=%{buildroot}/usr install
 rm -rf %{buildroot}/usr/etc
+rm -f %{buildroot}/lib/libchirp_client.so  # fix conflict with condor
 %ifarch x86_64
 mv %{buildroot}/usr/lib %{buildroot}/usr/lib64
 %endif
@@ -87,5 +88,7 @@ rm -rf %{buildroot}
 %{_includedir}/*
 
 %changelog
+* Tue Oct 27 2015 Jakob Blomer <jblomer@cern.ch> - 3.7.1
+- Fix conflict with condor
 * Sun Apr 07 2013 Jakob Blomer <jblomer@cern.ch> - 3.7.1
 - Initial package
