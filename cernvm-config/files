@@ -8,12 +8,9 @@
 /etc/condor/*
 /etc/cvmfs/*
 /etc/init.d/*
-/etc/pam.d/*
-/etc/squid/*
 /etc/polkit-1/localauthority/*
 /etc/profile.d/*
 /etc/ssh/*
-/etc/X11/*
 /etc/sysconfig/*
 /etc/tuned/*
 /etc/cernvm
