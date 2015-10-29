@@ -12,6 +12,7 @@ prepared: version release | $(CCTOOLS_NAME) dist
 	rm -rf dist/* dist/.prepared
 	mkdir -p dist/usr/share/doc dist/usr/include
 	cp -av $(CCTOOLS_NAME)/bin dist/usr/
+	rm -f dist/usr/bin/prune
 	cp -av $(CCTOOLS_NAME)/lib dist/usr/lib64
 	mv dist/usr/lib64/lib64/* dist/usr/lib64/
 	rmdir dist/usr/lib64/lib64
