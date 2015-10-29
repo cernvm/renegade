@@ -1,19 +1,33 @@
 
 include $(TOP)/config.mk
 
-XROOTD_VERSION = 3.0.5
-EXTRA_SOURCES = $(RPMTOP)/SOURCES/xrootd-$(XROOTD_VERSION).tar.gz
+EXTRA_SOURCES = prepared
+
+CCTOOLS_NAME = $(NAME)-$(VERSION)-$(HOSTARCH)-redhat$(UPSTREAM_VERSION)
+
+dist:
+	mkdir -p dist
+
+prepared: version release | $(CCTOOLS_NAME) dist
+	rm -rf dist/* dist/.prepared
+	mkdir -p dist/usr/share/doc dist/usr/include
+	cp -av $(CCTOOLS_NAME)/bin dist/usr/
+	cp -av $(CCTOOLS_NAME)/lib dist/usr/lib64
+	mv dist/usr/lib64/lib64/* dist/usr/lib64/
+	rmdir dist/usr/lib64/lib64
+	cp -av $(CCTOOLS_NAME)/doc dist/usr/share/doc/$(NAME)-$(VERSION)
+	cp -av $(CCTOOLS_NAME)/include/cctools dist/usr/include
+	cp -av $(CCTOOLS_NAME)/share/cctools dist/usr/share/
+	cp -av $(CCTOOLS_NAME)/share/man dist/usr/share/
+	touch prepared
+
+$(CCTOOLS_NAME): $(CCTOOLS_NAME).tar.gz
+	tar xvfz $(CCTOOLS_NAME).tar.gz
+	touch $(CCTOOLS_NAME)
+
+$(CCTOOLS_NAME).tar.gz:
+	curl http://ccl.cse.nd.edu/software/files/$(CCTOOLS_NAME).tar.gz > $(CCTOOLS_NAME).tar.gz
+
 include $(TOP)/generic.mk
-
-$(SOURCE_TARBALL): | $(RPMTOP)/SOURCES
-	curl http://www.cse.nd.edu/~ccl/software/files/$(NAME)-$(VERSION)-source.tar.gz > $(SOURCE_TARBALL)	
-
-$(EXTRA_SOURCES): | $(RPMTOP)/SOURCES
-	curl http://xrootd.org/download/v$(XROOTD_VERSION)/xrootd-$(XROOTD_VERSION).tar.gz > $(EXTRA_SOURCES)
-
-$(SPEC_FILE): cctools.spec version release | $(RPMTOP)/SPECS
-	cat cctools.spec | \
-	  sed -e "s/^Version: AUTO/Version: $(VERSION)/" | \
-	  sed -e "s/AUTO_XROOTD_VERSION/$(XROOTD_VERSION)/" | \
-	  sed -e "s/^Release: AUTO/Release: $(RELEASE)/" \
-	  > $(SPEC_FILE)
+include $(TOP)/template-spec.mk
+include $(TOP)/from-svn.mk
