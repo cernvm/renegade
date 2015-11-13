@@ -3,6 +3,9 @@ TOP = $(shell pwd)
 include $(TOP)/params.mk
 
 PACKAGES = \
+	amiconfig-cernvm \
+	amiconfig-hepix \
+	amiconfig-rpath \
 	azure-cli \
 	CERN-CA-certs \
 	cernvm-config \
