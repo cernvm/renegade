@@ -1,3 +1,2 @@
 /etc/cernvm/keys/*
-/usr/sbin/cernvm-online-login.sh
 /usr/sbin/cernvm-online.sh
