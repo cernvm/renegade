@@ -6,6 +6,7 @@ PACKAGES = \
 	azure-cli \
 	CERN-CA-certs \
 	cernvm-config \
+	cernvm-online-guest \
 	cernvm-pam \
 	cernvm-release \
 	cernvm-theme \
