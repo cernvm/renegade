@@ -1,2 +1,3 @@
 /etc/cernvm/keys/*
 /usr/sbin/cernvm-online.sh
+/usr/lib/systemd/system/cernvm-online.service

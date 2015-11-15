@@ -30,8 +30,9 @@ rm -rf %{buildroot}
 /usr/lib/python/site-packages/*
 /usr/bin/amiconfig-mime
 /usr/sbin/amiconfig-helper
-/etc/init.d/amiconfig-cernvm
 
 %changelog
+* Sun Nov 15 2015 Jakob Blomer <jblomer@cern.ch> - 0.5.3
+- move amiconfig-cernvm to cernvm-online package
 * Thu Apr 25 2013 Jakob Blomer <jblomer@cern.ch> - 0.5.1
 - Initial package
