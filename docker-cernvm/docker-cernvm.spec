@@ -18,8 +18,9 @@ The Docker self-contained binary plus configuration for CernVM
 %install
 rm -rf %{buildroot}
 install -D -m 755 docker %{buildroot}/usr/bin/docker
-install -D -m 755 docker.initd %{buildroot}/etc/init.d/docker
 install -D -m 644 docker.conf %{buildroot}/etc/docker.conf
+install -D -m 644 docker.service %{buildroot}/usr/lib/systemd/system/docker.service
+install -D -m 644 docker.socket %{buildroot}/usr/lib/systemd/system/docker.socket
 
 %clean
 rm -rf %{buildroot}
@@ -35,10 +36,13 @@ fi
 %files
 %defattr(-,root,root,-)
 %{_bindir}/docker
-%{_sysconfdir}/init.d/docker
+/usr/lib/systemd/system/docker.service
+/usr/lib/systemd/system/docker.socket
 %config %{_sysconfdir}/docker.conf
 
 %changelog
+* Sun Nov 15 2015 Jakob Blomer <jblomer@cern.ch> - 1.8.3-3
+- Systemd integration
 * Tue Oct 13 2015 Jakob Blomer <jblomer@cern.ch> - 1.8.3-2
 - Remove chkconfig stuff
 * Sun Dec 21 2014 Jakob Blomer <jblomer@cern.ch> - 1.4.1-1

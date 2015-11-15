@@ -1,0 +1,13 @@
+[Unit]
+Description=VMware guest additions
+After=local-fs.target
+Wants=local-fs.target
+ConditionVirtualization=vmware
+
+[Service]
+Type=forking
+ExecStart=/etc/cernvm/service.d/vmware-guestd
+PIDFile=/var/run/vmware-guestd.pid
+
+[Install]
+WantedBy=multi-user.target

@@ -5,6 +5,7 @@ Release: AUTO%{?dist}
 Source0: %{name}-%{version}.tar.gz
 Source1: vmware-guestd.init
 Source2: network.patch
+Source3: vmware-guestd.service
 Group: Applications/System
 License: GPL
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
@@ -63,9 +64,12 @@ ln -s /usr/sbin/mount.vmhgfs %{buildroot}/sbin/mount.vmhgfs
 mkdir -p %{buildroot}/mnt/hgfs
 
 # vmtoolsd -- syncronizes time with host, responsible for "vmware tools installed"
-mkdir -p %{buildroot}/etc/init.d
-cp %{_sourcedir}/vmware-guestd.init %{buildroot}/etc/init.d/vmware-guestd
-chmod +x %{buildroot}/etc/init.d/vmware-guestd
+mkdir -p %{buildroot}/etc/cernvm/service.d
+cp %{_sourcedir}/vmware-guestd.init %{buildroot}/etc/cernvm/service.d/vmware-guestd
+chmod +x %{buildroot}/etc/cernvm/service.d/vmware-guestd
+
+mkdir -p %{buildroot}/usr/lib/systemd/system
+cp %{_sourcedir}/vmware-guestd.service %{buildroot}/usr/lib/systemd/system/vmware-guestd.service
 
 # Fix suspend script: service network stop does not work in uCernVM
 cd %{buildroot}/etc/vmware-tools/scripts/vmware
@@ -89,9 +93,12 @@ rm -rf %{buildroot}
 /sbin/*
 /etc/vmware-tools
 %dir /mnt/hgfs
-/etc/init.d/vmware-guestd
+/etc/cernvm/service.d/vmware-guestd
+/usr/lib/systemd/system/vmware-guestd.service
 
 %changelog
+* Sun Nov 15 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-5
+- Systemd integration
 * Sat Oct 10 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-3
 - Update to reflect new open-vm-tools version
 * Mon May 15 2015 Jakob Blomer <jblomer@cern.ch> - 9.4.0-9
