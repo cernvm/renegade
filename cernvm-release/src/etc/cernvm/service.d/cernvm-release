@@ -1,0 +1,61 @@
+#!/bin/bash
+
+cernvm_name="CERN Virtual Machine"
+cernvm_release="/etc/cernvm-release"
+upstream_release="/etc/system-release"
+cernvm_metarpm="/etc/cernvm/metarpm"
+issue="/etc/issue"
+issuenet="/etc/issue.net"
+
+
+get_appliance_version () {
+  echo $(ls -1 /.installed_cernvm-system* | cut -d\- -f3)
+}
+
+
+writedistrorelease () {
+  if [ -n "${appliance_version}" ] ; then
+    version="${appliance_version}"
+  else
+    appliance_version="$(get_appliance_version)"
+    version="${appliance_version}"
+  fi
+
+  echo "${cernvm_name}, version ${version}" > ${cernvm_release}
+}
+
+
+writeissue () {
+  # find out network addresses
+  # FIXME: figure out ipv6 support
+  ip_addr="$(/sbin/ifconfig | grep "inet " | grep -v "127.0.0.1" | awk \
+           '{print $2 }' | head -n 1)"
+  netcount="$(/sbin/ifconfig | grep "inet " | grep -v "127.0.0.1" | wc -l)"
+
+  # do we have networking yet?
+  if [ "${netcount}" -ge 1 ];then
+    have_networking="true"
+  else
+    have_networking="false"
+  fi
+
+  # the macro <IP>
+  if ${have_networking}; then
+    IP="${ip_addr}"
+  else
+    IP="localhost"
+  fi
+
+  echo "Welcome to `cat $cernvm_release`" > ${issue}
+  echo "  based on `cat $upstream_release`" >> ${issue}
+  echo "  Kernel `uname -r` on an `uname -m`" >> ${issue}
+  echo >> ${issue}
+  echo "IP Address of this VM: $IP" >> ${issue}
+  echo "In order to apply cernvm-online context, use #<PIN> as user name." >> ${issue}
+  echo >> ${issue}
+  cp ${issue} ${issuenet}
+}
+
+
+writedistrorelease
+writeissue

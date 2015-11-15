@@ -22,3 +22,4 @@
 /etc/grid-security/*
 /usr/bin/*
 /usr/lib/tuned/cernvm
+/usr/lib/systemd/system/*
