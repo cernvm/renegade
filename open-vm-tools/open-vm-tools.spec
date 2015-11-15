@@ -60,7 +60,7 @@ cd open-vm-tools
 make DESTDIR=%{buildroot} install
 
 rm -f %{buildroot}/sbin/mount.vmhgfs
-ln -s /usr/sbin/mount.vmhgfs %{buildroot}/sbin/mount.vmhgfs
+rm -f %{buildroot}/usr/sbin/mount.vmhgfs
 mkdir -p %{buildroot}/mnt/hgfs
 
 # vmtoolsd -- syncronizes time with host, responsible for "vmware tools installed"
@@ -89,14 +89,14 @@ rm -rf %{buildroot}
 /etc/pam.d/vmtoolsd
 /usr/include/*
 /usr/lib64/*
-/usr/sbin/*
-/sbin/*
 /etc/vmware-tools
 %dir /mnt/hgfs
 /etc/cernvm/service.d/vmware-guestd
 /usr/lib/systemd/system/vmware-guestd.service
 
 %changelog
+* Sun Nov 15 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-6
+- remove mount.vmhgfs (use fuse now)
 * Sun Nov 15 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-5
 - Systemd integration
 * Sat Oct 10 2015 Jakob Blomer <jblomer@cern.ch> - 10.0.0-3
