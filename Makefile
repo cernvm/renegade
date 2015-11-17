@@ -23,6 +23,7 @@ PACKAGES = \
 	perl-Amazon-EC2 \
 	perl-Text-Aligner \
 	perl-Text-Table \
+	vboxguest \
 	VBoxManage
 
 #PACKAGES = \
