@@ -1,0 +1,15 @@
+[Unit]
+Description=Initialize VirtualBox Guest Additions
+After=local-fs.target
+Before=network.target cernvm-release.service
+Wants=local-fs.target network.target cernvm-release.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/cernvm/service.d/vboxguest
+RemainAfterExit=yes
+TimeoutSec=0
+
+[Install]
+WantedBy=multi-user.target
+

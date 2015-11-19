@@ -3,3 +3,5 @@
 /usr/share/*
 /usr/lib64/*
 /sbin/*
+/etc/cernvm/service.d/*
+/usr/lib/systemd/system/*

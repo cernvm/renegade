@@ -1,0 +1,90 @@
+#!/bin/sh
+
+install_x11_startup_app() {
+  app_src=$1
+  desktop_src=$2
+  service_name=$3
+  alt_command=$4
+  
+  app_dest=`basename $app_src sh`
+  app_dest_sh=`basename $app_src sh`.sh
+  desktop_dest=`basename $desktop_src`
+  x11_autostart="/etc/xdg/autostart"
+  x11_init_dir=/etc/X11/xinit/xinitrc.d
+  install -m 0644 $desktop_src "$x11_autostart/$desktop_dest"
+  install -m 0755 $app_src "$x11_init_dir/$app_dest_sh"
+}
+
+
+setup_vbox_x11() {
+  xver=`X -version 2>&1`
+  x_version=`echo "$xver" | sed -n 's/^X Window System Version \([0-9.]\+\)/\1/p'``echo "$xver" | sed -n 's/^XFree86 Version \([0-9.]\+\)/\1/p'``echo "$xver" | sed -n 's/^X Protocol Version 11, Revision 0, Release \([0-9.]\+\)/\1/p'``echo "$xver" | sed -n 's/^X.Org X Server \([0-9.]\+\)/\1/p'`
+  x_version_short=`echo "${x_version}" | sed 's/\([0-9]*\.[0-9]*\)\..*/\1/'`
+  LIB=/usr/lib64
+  lib_dir="$LIB/VBoxGuestAdditions"
+  share_dir="/usr/share/VBoxGuestAdditions"
+  modules_dir=`X -showDefaultModulePath 2>&1`
+  vboxvideo_src=vboxvideo_drv_`echo ${x_version_short} | sed 's/\.//'`.so
+  driver_ext=".so"
+  autokeyboard="--autoKeyboard"
+  automouse="--autoMouse"
+  nopsaux="--nopsaux"
+  
+  rm -f "$modules_dir/drivers/vboxvideo_drv$driver_ext"
+  ln -s "$lib_dir/$vboxvideo_src" "$modules_dir/drivers/vboxvideo_drv$driver_ext"
+  rm -f "/usr/lib64/dri/vboxvideo_dri.so"
+  ln -s "$LIB/VBoxOGL.so" "/usr/lib64/dri/vboxvideo_dri.so"
+  
+  install_x11_startup_app "$lib_dir/98vboxadd-xclient" "$share_dir/vboxclient.desktop" VBoxClient VBoxClient-all
+}
+
+
+setup_vbox_eth1() {
+  if [ `lspci 2>/dev/null | grep -c Ethernet` -eq 2 ]
+  then 
+    if [ ! -f  /etc/sysconfig/network-scripts/ifcfg-eth1 ] 
+    then
+      cat<<EOF >/etc/sysconfig/network-scripts/ifcfg-eth1
+DEVICE=eth1
+BOOTPROTO=dhcp
+ONBOOT=yes
+TYPE=Ethernet
+NM_CONTROLLED=no
+EOF
+    fi
+  fi
+}
+
+
+if [ ! -d /etc/cernvm/tools.d ]; then
+  mkdir -p /etc/cernvm/tools.d
+  adapter=`/sbin/lspci 2>/dev/null | grep "VGA.*controller"`
+  case $adapter in 
+    *VirtualBox*)
+      /usr/sbin/useradd -d /var/run/vboxadd -g 1 -r -s /bin/false vboxadd >/dev/null 2>&1
+      groupadd -f vboxsf >/dev/null 2>&1
+      echo "KERNEL==\"vboxguest\", NAME=\"vboxguest\",OWNER=\"vboxadd\",MODE=\"0660\"" > /etc/udev/rules.d/60-vboxadd.rules
+      echo "KERNEL==\"vboxuser\", NAME=\"vboxuser\",OWNER=\"vboxadd\",MODE=\"0666\"" >> /etc/udev/rules.d/60-vboxadd.rules
+      if [ -c /dev/vboxguest ]; then
+        chown vboxadd /dev/vboxguest
+        chmod 0660 /dev/vboxguest
+      fi
+      if [ -c /dev/vboxuser ]; then
+        chown vboxadd /dev/vboxuser
+        chmod 0666 /dev/vboxuser
+      fi
+      setup_vbox_eth1
+      setup_vbox_x11
+      touch /etc/cernvm/tools.d/virtualbox
+    ;;
+  esac
+fi
+
+if [ -f /etc/cernvm/tools.d/virtualbox ]; then
+  modprobe vboxguest
+  modprobe vboxsf
+  modprobe vboxvideo
+  VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-set-threshold" 60000 >/dev/null 2>&1
+  VBoxControl guestproperty set "/VirtualBox/GuestAdd/CheckHostVersion" 0 >/dev/null 2>&1
+fi
+

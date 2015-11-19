@@ -1,0 +1,14 @@
+[Unit]
+Description=VirtualBox guest additions
+After=local-fs.target vboxguest
+Wants=local-fs.target vboxguest
+ConditionPathExists=/etc/cernvm/tools.d/virtualbox
+
+[Service]
+Type=forking
+ExecStartPre=/etc/cernvm/service.d/vboxguest-sf
+ExecStart=/sbin/VBoxService
+
+[Install]
+WantedBy=multi-user.target
+
