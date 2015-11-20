@@ -1,8 +1,8 @@
 [Unit]
 Description=Initialize VirtualBox Guest Additions
 After=local-fs.target
-Before=network.target cernvm-release.service
-Wants=local-fs.target network.target cernvm-release.service
+Before=network.service cernvm-release.service
+Wants=local-fs.target network.service cernvm-release.service
 
 [Service]
 Type=oneshot
