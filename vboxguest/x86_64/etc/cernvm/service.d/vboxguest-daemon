@@ -1,5 +1,9 @@
 #!/bin/sh
 
+if [ ! -f /etc/cernvm/tools.d/virtualbox ]; then
+  exit 0
+fi
+
 if [ -f /etc/cernvm/site.conf ]; then
   . /etc/cernvm/site.conf
   if [ "x$CERNVM_USER" != "x" ]; then
@@ -14,4 +18,6 @@ if [ -f /etc/cernvm/site.conf ]; then
     done
   fi
 fi
+
+exec /usr/sbin/VBoxService
 

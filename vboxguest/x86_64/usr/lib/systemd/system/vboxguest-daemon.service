@@ -6,8 +6,7 @@ ConditionPathExists=/etc/cernvm/tools.d/virtualbox
 
 [Service]
 Type=forking
-ExecStartPre=/etc/cernvm/service.d/vboxguest-sf
-ExecStart=/sbin/VBoxService
+ExecStart=/etc/cernvm/service.d/vboxguest-daemon
 
 [Install]
 WantedBy=multi-user.target
