@@ -2,7 +2,6 @@
 Description=VirtualBox guest additions
 After=local-fs.target vboxguest
 Wants=local-fs.target vboxguest
-ConditionPathExists=/etc/cernvm/tools.d/virtualbox
 
 [Service]
 Type=forking
