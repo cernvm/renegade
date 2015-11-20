@@ -1,7 +1,7 @@
 [Unit]
 Description=VirtualBox guest additions
-After=local-fs.target vboxguest
-Wants=local-fs.target vboxguest
+After=local-fs.target vboxguest.service
+Wants=local-fs.target vboxguest.service
 
 [Service]
 Type=forking

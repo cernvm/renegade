@@ -1,7 +1,7 @@
 [Unit]
 Description=Write release information to /etc/issue
-After=local-fs.target
-Wants=local-fs.target
+After=local-fs.target network-online.target
+Wants=local-fs.target network-online.target
 
 [Service]
 Type=oneshot
