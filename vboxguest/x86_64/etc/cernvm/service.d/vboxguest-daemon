@@ -19,5 +19,5 @@ if [ -f /etc/cernvm/site.conf ]; then
   fi
 fi
 
-exec /usr/sbin/VBoxService
+exec /usr/sbin/VBoxService -f
 

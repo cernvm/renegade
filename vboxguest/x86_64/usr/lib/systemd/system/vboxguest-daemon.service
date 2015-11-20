@@ -4,7 +4,7 @@ After=local-fs.target vboxguest.service
 Wants=local-fs.target vboxguest.service
 
 [Service]
-Type=forking
+Type=simple
 ExecStart=/etc/cernvm/service.d/vboxguest-daemon
 
 [Install]
