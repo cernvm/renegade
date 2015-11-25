@@ -32,38 +32,7 @@ PACKAGES = \
 	VBoxManage \
 	WALinuxAgent
 
-#PACKAGES = \
-#	azure-cli \
-#	cctools \
-#	CERN-CA-certs \
-#	cern-cloudinit-modules \
-#	cernvm-appliance-agent \
-#	cernvm-config \
-#	cernvm-gce \
-#	cernvm-pam \
-#	cernvm-patches \
-#	cernvm-theme \
-#	cernvm-release \
-#	cernvm-online-guest \
-#	cernvm-update \
-#	condor \
-#	cloud-scheduler \
-#	ec2-api-tools \
-#	ec2-ami-tools \
-#	elastiq \
-#	eos-client \
-#	eos-fuse \
-#	erlang \
-#	google-cloud-sdk \
-#	openafs-kernel \
-#	open-vm-tools \
-#	shoal-client \
-#	slim \
-#	uriparser \
-#	vaf-client \
-#	vboxguest \
-#	VBoxManage \
-#	vmware-tools-plugins-unity
+PACKAGES-32BIT = $(wildcard *-i686)
 
 default: all
 	$(MAKE) repo
@@ -71,9 +40,12 @@ default: all
 $(PACKAGES)::
 	$(MAKE) TOP=$(TOP) -C $@ $(MAKECMDGOALS)
 
-all clean : $(PACKAGES)
+$(PACKAGES-32BIT)::
+	$(MAKE) TOP=$(TOP) -C $@ $(MAKECMDGOALS)
+
+all clean : $(PACKAGES) $(PACKAGES-32BIT)
 
 repo: $(YUM_REPO)/repodata/repomd.xml
 $(YUM_REPO)/repodata/repomd.xml: $(wildcard $(YUM_REPO)/*.rpm)
-	createrepo -d -s sha $(YUM_REPO) --workers=12
+	createrepo -d $(YUM_REPO) --workers=12
 
