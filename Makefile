@@ -18,12 +18,16 @@ PACKAGES = \
 	docker-cernvm \
 	ec2-api-tools \
 	ec2-ami-tools \
+	eos-client \
+	eos-fuse \
+	elastiq \
 	lxdm \
 	openafs-kernel \
 	open-vm-tools \
 	perl-Amazon-EC2 \
 	perl-Text-Aligner \
 	perl-Text-Table \
+	vaf-client \
 	vboxguest \
 	VBoxManage \
 	WALinuxAgent
