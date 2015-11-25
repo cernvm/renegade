@@ -1,1 +1,4 @@
-/usr/lib/*
+/usr/lib/fipscheck/*
+/usr/lib/libgmp*
+/usr/lib/sse2/fipscheck/*
+/usr/lib/sse2/libgmp*
