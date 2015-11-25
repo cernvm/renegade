@@ -24,7 +24,8 @@ PACKAGES = \
 	perl-Text-Aligner \
 	perl-Text-Table \
 	vboxguest \
-	VBoxManage
+	VBoxManage \
+	WALinuxAgent
 
 #PACKAGES = \
 #	azure-cli \
