@@ -7,6 +7,7 @@ PACKAGES = \
 	amiconfig-hepix \
 	amiconfig-rpath \
 	azure-cli \
+	cctools \
 	CERN-CA-certs \
 	cernvm-config \
 	cernvm-online-guest \
