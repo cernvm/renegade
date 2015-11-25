@@ -1,0 +1,350 @@
+#!/bin/bash
+###############################################################################
+#    Copyright (C) 2004 by Valery Reznic
+#    This file is a part of the rpmrebuild project
+#    $Id: processing_func.src 831 2013-07-25 10:07:15Z valery_reznic $
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+###############################################################################
+
+function processing_init
+{
+	spec_concatenated="no"
+
+	local SPEC_DIR=$TMPDIR_WORK
+
+	SPEC_CHANGELOG=$SPEC_DIR/changelog
+	SPEC_CONFLICTS=$SPEC_DIR/conflicts
+	SPEC_DESCRIPTION=$SPEC_DIR/description
+	SPEC_FILES=$SPEC_DIR/files
+	SPEC_OBSOLETES=$SPEC_DIR/obsoletes
+	SPEC_POST=$SPEC_DIR/post
+	SPEC_POSTTRANS=$SPEC_DIR/posttrans
+	SPEC_POSTUN=$SPEC_DIR/postun
+	SPEC_PRE=$SPEC_DIR/pre
+	SPEC_PRETRANS=$SPEC_DIR/pretrans
+	SPEC_PREAMBLE=$SPEC_DIR/preamble
+	SPEC_PREUN=$SPEC_DIR/preun
+	SPEC_PROVIDES=$SPEC_DIR/provides
+	SPEC_REQUIRES=$SPEC_DIR/requires
+	SPEC_SUGGESTS=$SPEC_DIR/suggests
+	SPEC_ENHANCES=$SPEC_DIR/enhances
+	SPEC_TRIGGERS=$SPEC_DIR/triggers
+	SPEC_VERIFYSCRIPT=$SPEC_DIR/verifyscript
+
+	spec_index=1
+
+	si_changelog=1
+	si_conflicts=1
+	si_description=1
+	si_files=1
+	si_obsoletes=1
+	si_post=1
+	si_posttrans=1
+	si_postun=1
+	si_pre=1
+	si_pretrans=1
+	si_preamble=1
+	si_preun=1
+	si_provides=1
+	si_requires=1
+	si_suggests=1
+	si_enhances=1
+	si_triggers=1
+	si_verifyscript=1
+	si_rpmqf=1
+}
+
+function processing_spec_change
+{
+	local Func="processing_spec_change"
+	[ $# -ne 1 -o "x$1" = "x" ] && {
+		echo "Usage: $0 $Func <operation>" 1>&2
+		return 1
+	}
+
+	need_change_spec="yes"
+
+	local operation="$1"
+	local SPEC_IN SPEC_OUT
+
+
+	case "X$operation" in
+		Xconcatenate)
+			[ "X$spec_concatenated" = "Xyes" ] && return 0
+			spec_concatenated="yes"
+			# No need SPEC_IN here
+			SPEC_OUT=$FIC_SPEC.$spec_index
+		;;
+
+		Xchange-spec-changelog | \
+		Xedit-changelog)
+			SPEC_IN=$SPEC_CHANGELOG.$si_changelog
+			si_changelog=$[si_changelog + 1]
+			SPEC_OUT=$SPEC_CHANGELOG.$si_changelog
+		;;
+
+		Xchange-spec-conflicts | \
+		Xedit-conflicts)
+			SPEC_IN=$SPEC_CONFLICTS.$si_conflicts
+			si_conflicts=$[si_conflicts + 1]
+			SPEC_OUT=$SPEC_CONFLICTS.$si_conflicts
+		;;
+
+		Xchange-spec-description | \
+		Xedit-description)
+			SPEC_IN=$SPEC_DESCRIPTION.$si_description
+			si_description=$[si_description + 1]
+			SPEC_OUT=$SPEC_DESCRIPTION.$si_description
+		;;
+
+		Xchange-spec-files | \
+		Xedit-files)
+			SPEC_IN=$SPEC_FILES.$si_files
+			si_files=$[si_files + 1]
+			SPEC_OUT=$SPEC_FILES.$si_files
+		;;
+
+		Xchange-spec-obsoletes | \
+		Xedit-obsoletes)
+			SPEC_IN=$SPEC_OBSOLETES.$si_obsoletes
+			si_obsoletes=$[si_obsoletes + 1]
+			SPEC_OUT=$SPEC_OBSOLETES.$si_obsoletes
+		;;
+
+		Xchange-spec-post | \
+		Xedit-post)
+			SPEC_IN=$SPEC_POST.$si_post
+			si_post=$[si_post + 1]
+			SPEC_OUT=$SPEC_POST.$si_post
+		;;
+
+		Xchange-spec-posttrans | \
+		Xedit-posttrans)
+			SPEC_IN=$SPEC_POSTTRANS.$si_posttrans
+			si_posttrans=$[si_posttrans + 1]
+			SPEC_OUT=$SPEC_POSTTRANS.$si_posttrans
+		;;
+
+		Xchange-spec-postun | \
+		Xedit-postun)
+			SPEC_IN=$SPEC_POSTUN.$si_postun
+			si_postun=$[si_postun + 1]
+			SPEC_OUT=$SPEC_POSTUN.$si_postun
+		;;
+
+		Xchange-spec-pre | \
+		Xedit-pre)
+			SPEC_IN=$SPEC_PRE.$si_pre
+			si_pre=$[si_pre + 1]
+			SPEC_OUT=$SPEC_PRE.$si_pre
+		;;
+
+		Xchange-spec-pretrans | \
+		Xedit-pretrans)
+			SPEC_IN=$SPEC_PRETRANS.$si_pretrans
+			si_pretrans=$[si_pretrans + 1]
+			SPEC_OUT=$SPEC_PRETRANS.$si_pretrans
+		;;
+
+		Xchange-spec-preamble | \
+		Xedit-preamble)
+			SPEC_IN=$SPEC_PREAMBLE.$si_preamble
+			si_preamble=$[si_preamble + 1]
+			SPEC_OUT=$SPEC_PREAMBLE.$si_preamble
+		;;
+
+		Xchange-spec-preun | \
+		Xedit-preun)
+			SPEC_IN=$SPEC_PREUN.$si_preun
+			si_preun=$[si_preun + 1]
+			SPEC_OUT=$SPEC_PREUN.$si_preun
+		;;
+
+		Xchange-spec-provides | \
+		Xedit-provides)
+			SPEC_IN=$SPEC_PROVIDES.$si_provides
+			si_provides=$[si_provides + 1]
+			SPEC_OUT=$SPEC_PROVIDES.$si_provides
+		;;
+
+		Xchange-spec-requires | \
+		Xedit-requires)
+			SPEC_IN=$SPEC_REQUIRES.$si_requires
+			si_requires=$[si_requires + 1]
+			SPEC_OUT=$SPEC_REQUIRES.$si_requires
+		;;
+
+		Xchange-spec-suggests | \
+		Xedit-suggests)
+			SPEC_IN=$SPEC_SUGGESTS.$si_suggests
+			si_suggests=$[si_suggests + 1]
+			SPEC_OUT=$SPEC_SUGGESTS.$si_suggests
+		;;
+
+		Xchange-spec-enhances | \
+		Xedit-enhances)
+			SPEC_IN=$SPEC_ENHANCES.$si_enhances
+			si_enhances=$[si_enhances + 1]
+			SPEC_OUT=$SPEC_ENHANCES.$si_enhances
+		;;
+
+		Xchange-spec-triggers | \
+		Xedit-triggers)
+			SPEC_IN=$SPEC_TRIGGERS.$si_triggers
+			si_triggers=$[si_triggers + 1]
+			SPEC_OUT=$SPEC_TRIGGERS.$si_triggers
+		;;
+
+		Xchange-spec-verifyscript | \
+		Xedit-verifyscript)
+			SPEC_IN=$SPEC_VERIFYSCRIPT.$si_verifyscript
+			si_verifyscript=$[si_verifyscript + 1]
+			SPEC_OUT=$SPEC_VERIFYSCRIPT.$si_verifyscript
+		;;
+
+		Xchange-spec-whole | \
+		Xedit-whole)
+			$Func "concatenate" || return
+			SPEC_IN=$FIC_SPEC.$spec_index
+			spec_index=$[spec_index + 1]
+			SPEC_OUT=$FIC_SPEC.$spec_index
+		;;
+
+		*)
+			Error "$Func: $UnknownOperation '$operation'"
+			return 1 
+		;;
+	esac
+
+	case "X$operation" in
+		Xchange-spec-*)
+			cat <<-CMD_CHANGE >> $Output || return
+				# $operation
+				( 
+				   PATH="\$RPMREBUILD_PLUGINS_DIR:\$PATH" &&
+				   export LONG_OPTION="$LONG_OPTION"      &&
+				   $OPTARG; 
+				) < $SPEC_IN > $SPEC_OUT || return
+			
+			CMD_CHANGE
+		;;
+
+		Xedit-*)
+			cat <<-CMD_EDIT >> $Output || return
+				# $operation
+				   cp -f $SPEC_IN $SPEC_OUT || return
+				   SpecEdit $SPEC_OUT       || return
+			
+			CMD_EDIT
+		;;
+
+		Xconcatenate)
+			cat <<-CMD_CONCATENATE >> $Output || return
+				# $operation
+				   spec_concatenate > $SPEC_OUT || return
+			CMD_CONCATENATE
+
+		;;
+	esac || return
+	return 0
+}
+
+function processing_fini
+{
+	local cmd
+	if [ "X$spec_concatenated" = "Xyes" ]; then
+		case "x$specfile" in
+			x) # No spec-only flag
+				cmd="cp -f $FIC_SPEC.$spec_index $FIC_SPEC"
+			;;
+
+			x-) # Spec-only flag, specfile is stdout
+				cmd="cat $FIC_SPEC.$spec_index"
+			;;
+
+			*) # Spec-only flag, specfile not stdout
+				cmd="cp -f $FIC_SPEC.$spec_index $specfile"
+			;;
+			esac || return
+	else
+		case "x$specfile" in
+			x) # No spec-only flag
+				cmd="spec_concatenate > $FIC_SPEC"
+			;;
+
+			x-) # Spec-only flag, specfile is stdout
+				cmd="spec_concatenate"
+			;;
+
+			*) # Spec-only flag, specfile not stdout
+				cmd="spec_concatenate > $specfile"
+			;;
+		esac || return
+	fi
+
+	cat <<-CMD_FINI >> $Output || return
+	# fini
+	   $cmd || return
+	CMD_FINI
+
+	return 0
+}
+
+function CreateProcessing
+{
+	[ $# -ne 1 -o "x$1" = "x" ] && {
+		Error "CreateProcessing <operation>"
+		return 1
+	}
+
+	local operation="$1"
+	local Output="$RPMREBUILD_PROCESSING"
+	local cmd
+	case "X$operation" in
+		Xfini)
+			processing_fini || return
+		;;
+
+		Xchange-spec-whole | Xedit-whole)
+			processing_spec_change "$operation" || return
+		;;
+
+		Xchange-spec-* | Xedit-*)
+			if [ "X$spec_concatenated" = "Xyes" ]; then
+				Error "'$LONG_OPTION' $ForbidenOption"
+				return 1
+			fi
+			processing_spec_change "$operation" || return
+		;;
+
+		Xchange-files)
+			need_change_files="yes"
+			cat <<-CMD_FILES >> $Output || return
+			# $operation
+			(
+			   PATH="\$RPMREBUILD_PLUGINS_DIR:\$PATH" &&
+			   export RPM_BUILD_ROOT="$BUILDROOT"     &&
+			   export LONG_OPTION="$LONG_OPTION"      &&
+			   $OPTARG; 
+			) || return
+			
+			CMD_FILES
+		;;
+
+		*)
+			Error "CreateProcessing: $UnknownOperation : '$operation'"
+			return 1
+		;;
+	esac || return
+	return 0
+}

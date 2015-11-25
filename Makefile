@@ -27,6 +27,7 @@ PACKAGES = \
 	perl-Amazon-EC2 \
 	perl-Text-Aligner \
 	perl-Text-Table \
+	rpmrebuild \
 	vaf-client \
 	vboxguest \
 	VBoxManage \

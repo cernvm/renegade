@@ -1,0 +1,10 @@
+what now ?
+
+- change release number if some files changes ?
+
+- write a graphical interface ?
+
+- something about package signature ?
+(detect passed signature with SIGGPG, ask for new one .)
+
+- add install option

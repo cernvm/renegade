@@ -1,0 +1,158 @@
+#!/bin/bash
+###############################################################################
+#    Copyright (C) 2002 by Eric Gerbier
+#    Bug reports to: gerbier@users.sourceforge.net
+#    $Id: rpmrebuild_rpmqf.src 831 2013-07-25 10:07:15Z valery_reznic $
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+###############################################################################
+# this file contains rpm query definitions
+###############################################################################
+# rpm query has a strange bug:
+# when format is enough long/complicate/whatsoever/
+# first constant string is disappears.
+# i.e, string '#dummy' will not be printed.
+# Without this format  (with '#dummy' string)
+# '#BUILDHOST:   ' is disappears.
+# If one day this bug will be fixed, it'll be just harmless
+# comment '#dummy' in the specfile
+# CHANGE:
+# in the at least rpm-4.3.1 and 4.3.2 it doesn't help:
+# i have to add TWO strings with 'dummy'.
+# No idea is it due to rpm change or because Eric add more tags.
+
+function qf_spec_preamble {
+echo '%|BUILDHOST?{#dummy}|\
+%|BUILDHOST?{#dummy}|\
+%|BUILDHOST?{[#BUILDHOST:    %{BUILDHOST}]}|\
+%|BUILDTIME?{[#BUILDTIME:    %{BUILDTIME:date}]}|\
+%|SOURCERPM?{[#SOURCERPM:    %{SOURCERPM}]}|\
+%|PATCH?{[#PATCH:    %{PATCH}]}|\
+%|RPMVERSION?{[#RPMVERSION:   %{RPMVERSION}]}|\
+%|COOKIE?{[#COOKIE:       %{COOKIE}]}|\
+%|INSTALLTIME?{[#INSTALLTIME:  %{INSTALLTIME:date}]}|\
+%|INSTPREFIXES?{[#INSTPREFIXES: %{INSTPREFIXES}]}|\
+%|OS?{[#OS:           %{OS}]}|\
+%|SIZE?{[#SIZE:           %{SIZE}]}|\
+%|ARCHIVESIZE?{[#ARCHIVESIZE:           %{ARCHIVESIZE}]}|\
+%|ARCH?{[#ARCH:         %{ARCH}]}:{#ARCH:        noarch}|\
+%|ARCH?{[BuildArch:     %{ARCH}]}:{BuildArch:    noarch}|\
+%|NAME?{[Name:          %{NAME}]}|\
+%|VERSION?{[Version:       %{VERSION}]}|\
+%|RELEASE?{[Release:       %{RELEASE}]}|\
+%|LICENSE?{[License:       %{LICENSE}] }|\
+%|GROUP?{[Group:         %{GROUP}]}|\
+%|SUMMARY?{[Summary:       %{SUMMARY}]}|\
+%|DISTRIBUTION?{[Distribution:  %{DISTRIBUTION}]}|\
+%|DISTTAG?{[DistTag:       %{DISTTAG}]}|\
+%|URL?{[URL:           %{URL}]}|\
+%|VENDOR?{[Vendor:        %{VENDOR}]}|\
+%|PACKAGER?{[Packager:      %{PACKAGER}]}|\
+%|EPOCH?{[Epoch:         %{EPOCH}]}|\
+%|EXCLUDEARCH?{[ExcludeArch:   %{EXCLUDEARCH}]}|\
+%|EXCLUSIVEARCH?{[ExclusiveArch: %{EXCLUSIVEARCH}]}|\
+%|EXCLUDEOS?{[ExcludeOs:     %{EXCLUDEOS}]}|\
+%|EXCLUSIVEOS?{[ExclusiveOs:   %{EXCLUSIVEOS}] }|\
+%|PREFIXES?{[Prefix:        %{PREFIXES}]}|'
+}
+
+function qf_spec_conflicts {
+echo '%|CONFLICTNAME?{[Conflicts:     %{CONFLICTNAME} %{CONFLICTFLAGS:depflags} %{CONFLICTVERSION}\n]}|'
+}
+
+function qf_spec_obsoletes {
+echo '%|OBSOLETES?{[Obsoletes:     %{OBSOLETES} %{OBSOLETEFLAGS:depflags} %{OBSOLETEVERSION}\n]}|'
+}
+
+function qf_spec_provides {
+echo '%|PROVIDES?{[Provides:      %{PROVIDES} %{PROVIDEFLAGS:depflags} %{PROVIDEVERSION}\n]}|'
+}
+
+function qf_spec_requires {
+echo '%|REQUIRENAME?{[Requires:      %{REQUIRENAME} %{REQUIREFLAGS:depflags} %{REQUIREVERSION}\n]}|'
+}
+
+function qf_spec_suggest {
+echo "#suggest"
+echo '%|SUGGESTSNAME?{[Suggests:      %{SUGGESTSNAME} %{SUGGESTSFLAGS:depflags} %{SUGGESTSVERSION}\n]}|'
+}
+
+function qf_spec_enhance {
+echo "#enhance"
+echo '%|ENHANCESNAME?{[Enhances:      %{ENHANCESNAME} %{ENHANCESFLAGS:depflags} %{ENHANCESVERSION}\n]}|'
+}
+
+function qf_spec_description {
+echo '%|DESCRIPTION?{[%{DESCRIPTION}\n]}|'
+}
+
+# used in rpmrebuild_files.sh rpmrebuild_ghost.sh rpmrebuild_buildroot.sh
+# rpm 4.10 (Fedora 18) not supported width in format specifier.
+# Let remove it here and deal with full output in files that use this
+# function output
+function qf_spec_files {
+echo '[%{FILEMODES:perms}\
+%{FILEFLAGS:fflags}\
+%{FILEMODES:octal}\
+%{FILEUSERNAME}\
+%{FILEGROUPNAME}\
+%{FILEVERIFYFLAGS:octal}\
+%{FILELANGS}\
+%{FILECAPS}\
+%{FILENAMES}\
+]'
+}
+
+function qf_spec_triggers {
+echo '[%%trigger%{TRIGGERTYPE} -p %{TRIGGERSCRIPTPROG} -- %{TRIGGERCONDS}\n%|TRIGGERSCRIPTS?{%{TRIGGERSCRIPTS}\n}|]'
+}
+
+function qf_spec_pre {
+echo '%|PREINPROG?{%%pre -p %{PREINPROG}\n%|PREIN?{[%{PREIN}\n]}|}:{%|PREIN?{\n%%pre\n[%{PREIN}\n]}|}|'
+}
+
+function qf_spec_pretrans {
+echo '%|PRETRANSPROG?{%%pretrans -p %{PRETRANSPROG}\n%|PRETRANS?{[%{PRETRANS}\n]}|}:{%|PRETRANS?{\n%%pretrans\n[%{PRETRANS}\n]}|}|'
+}
+
+function qf_spec_post {
+echo '%|POSTINPROG?{%%post -p %{POSTINPROG}\n%|POSTIN?{[%{POSTIN}\n]}|}:{%|POSTIN?{\n%%post\n[%{POSTIN}\n]}|}|'
+}
+
+function qf_spec_posttrans {
+echo '%|POSTTRANSPROG?{%%posttrans -p %{POSTTRANSPROG}\n%|POSTTRANS?{[%{POSTTRANS}\n]}|}:{%|POSTTRANS?{\n%%posttrans\n[%{POSTTRANS}\n]}|}|'
+}
+
+function qf_spec_preun {
+echo '%|PREUNPROG?{%%preun -p %{PREUNPROG}\n%|PREUN?{[%{PREUN}\n]}|}:{%|PREUN?{\n%%preun\n[%{PREUN}\n]}|}|'
+}
+
+function qf_spec_postun {
+echo '%|POSTUNPROG?{%%postun -p %{POSTUNPROG}\n%|POSTUN?{[%{POSTUN}\n]}|}:{%|POSTUN?{\n%%postun\n[%{POSTUN}\n]}|}|'
+}
+
+function qf_spec_verifyscript {
+echo '%|VERIFYSCRIPTPROG?{%%verifyscript -p %{VERIFYSCRIPTPROG}\n%|VERIFYSCRIPT?{[%{VERIFYSCRIPT}\n]}|}:{%|VERIFYSCRIPT?{\n%%verifyscript\n[%{VERIFYSCRIPT}\n]}|}|'
+}
+
+function qf_spec_changelog {
+echo '%|CHANGELOGNAME?{[* %{CHANGELOGTIME:day} %{CHANGELOGNAME}\n%{CHANGELOGTEXT}\n\n]}|'
+}
+
+function qf_spec_release {
+echo '%|RELEASE?{%{RELEASE}}|'
+}
+
+function qf_spec_arch {
+echo '%|ARCH?{%{ARCH}}:{noarch}|'
+}
+

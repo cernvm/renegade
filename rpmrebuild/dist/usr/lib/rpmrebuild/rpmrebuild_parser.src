@@ -1,0 +1,1337 @@
+# to be sourced from bash
+###############################################################################
+#
+#    Copyright (C) 2002 by Eric Gerbier
+#    Bug reports to: gerbier@users.sourceforge.net
+#    $Id: rpmrebuild_parser.src 855 2013-08-20 11:19:59Z gerbier $
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+###############################################################################
+function Usage
+{
+	name='rpmrebuild'
+	Echo "$name $UsageTitle
+$UsageUsage: $name [options] package
+options:
+   -5  --md5-compat-digest      $UsageMd5CompatDigest
+   -a, --additional=<flags>	$UsageAdditional
+   -b, --batch			$UsageBatch
+   -c, --comment-missing=<y|n>	$UsageCommentMissing
+   -d, --directory=<dir>        $UsageDirectory
+   -D, --define=<define>        $UsageDefine
+   -e, --edit-spec              $UsageEditSpec
+   -f, --filter=<command>       $UsageFilter
+   -i, --includes=<file>        $UsageInclude
+   -I, --install                $UsageInstall
+   -k, --keep-perm              $UsageKeepPerm
+       --pug-from-fs            $UsagePugFs
+       --pug-from-db (default)  $UsagePugDb
+       --cap-from-fs            $UsageCapFs
+       --cap-from-db (default)  $UsageCapDb
+   -l, --list-plugin		$UsageListPlug
+   -m, --modify=<command>       $UsageModify
+   -n, --notest-install		$UsageNoTestInstall
+   -p, --package                $UsagePackage
+   -P, --autoprovide            $UsageAutoProvide
+   -r, --release=N              $UsageRelease
+   -R, --autorequire            $UsageAutoRequire
+   -s, --spec-only=<specfile>   $UsageSpecOnly
+   -v, --verbose                $UsageVerbose
+       --debug                  $UsageDebug
+   -V, --version                $UsageVersion
+   -w, --warning                $UsageWarning
+   -y, --verify=<y|n>           $UsageVerify
+   -h, --help                   $UsageHelp
+       --help-plugins           $UsageHelpPlugins
+
+$UsageCopyright
+$UsageLicense
+"
+}
+###############################################################################
+function Usage_Plugins
+{
+	name='rpmrebuild'
+	Echo "$name $UsageTitle
+$UsageUsage: $name [options] package
+options:
+   --change-files=<command>                 $UsagePluginChangeFiles
+
+   --change-spec-whole=<command>            $UsagePluginChangeSpecWhole
+
+   --change-spec-preamble=<command>
+   --change-spec-conflicts=<command>
+   --change-spec-obsoletes=<command>
+   --change-spec-provides=<command>
+   --change-spec-requires=<command>
+   --change-spec-suggests=<command>
+   --change-spec-enhances=<command>
+   --change-spec-description=<command>
+   --change-spec-files=<command>
+   --change-spec-triggers=<command>
+   --change-spec-pre=<command>
+   --change-spec-pretrans=<command>
+   --change-spec-post=<command>
+   --change-spec-posttrans=<command>
+   --change-spec-preun=<command>
+   --change-spec-postun=<command>
+   --change-spec-verifyscript=<command>
+   --change-spec-changelog=<command>
+                                            $UsagePluginChangeSpec
+
+   --edit-whole                             $UsagePluginEditWhole
+
+   --edit-preamble
+   --edit-conflicts
+   --edit-obsoletes
+   --edit-provides
+   --edit-requires
+   --edit-suggests
+   --edit-enhances
+   --edit-description
+   --edit-files
+   --edit-triggers
+   --edit-pre
+   --edit-pretrans
+   --edit-post
+   --edit-posttrans
+   --edit-preun
+   --edit-postun
+   --edit-verifyscript
+   --edit-changelog
+                                            $UsagePluginEdit
+
+   -h, --help                               $UsagePluginHelp
+"
+
+}
+###############################################################################
+function List_Plugins
+{
+	plugindir=$( dirname $0)/plugins
+	for f in $plugindir/*.plug
+	do
+		plug=$(basename $f)
+		# use man to force localisation
+		# line number may vary
+		#text=$(man $plug | awk 'NR==7{print}' )
+		# filter by name of plugin
+		text=$(man $plug | awk "/$plug +- /{print}" )
+		if [ -n "$text" ]
+		then
+			echo "$text"
+		else
+			echo "$plug"
+		fi
+	done
+}
+###############################################################################
+function Try_Help
+{
+	Echo "$MoreInformation \`$0 --help'"
+}
+
+###############################################################################
+function UnrecognizedOption
+{
+	Echo "$0: $UnrecognizeOption \`--$LONG_OPTION'"
+	Try_Help
+}
+###############################################################################
+function AmbiguousOption
+{
+	Echo "$0: $AmbiguousOption \`--$LONG_OPTION'"
+	Try_Help
+}
+
+###############################################################################
+function RequeredArgument
+{
+	[ "x$SHORT_OPTION" = "x-" ] || return 0  # we use short option,
+                                                 	 # do nothing
+	if [ "$OPTARG_EXIST" ]; then
+		[ "$OPTIND_INCR" ] && OPTIND=$[OPTIND + 1]
+		return 0
+	fi
+
+	Echo "$0: option \`$LONG_OPTION' $RequiredArgument"
+	Try_Help
+	return 1
+}
+###############################################################################
+function Include
+{
+	while :; do 
+		read LONG_OPTION OPTARG || break
+		OPTARG_EXIST="$OPTARG"
+		case "x$LONG_OPTION" in
+			x#*)
+				: # comment, do nothing 
+				;;
+
+			x)
+				: # empty, do nothing
+				;;
+
+			*)
+				ProcessLongOptions || return
+				;;
+		esac || return
+	done < $INCLUDE_FILE
+}
+###############################################################################
+function ProcessLongOptions
+{
+		# Get "full" long option
+		case "$LONG_OPTION" in
+			a)
+				AmbiguousOption
+				return 1
+			;;
+
+			ad | \
+			add | \
+			addi | \
+			addit | \
+			additi | \
+			additio | \
+			addition | \
+			additiona | \
+			additional)
+				LONG_OPTION='additional'
+			;;
+
+			au | \
+			aut | \
+			auto )
+				AmbiguousOption
+				return 1
+			;;
+			autop | \
+			autopr | \
+			autopro | \
+			autoprov | \
+			autoprovi | \
+			autoprovid | \
+			autoprovide)
+				LONG_OPTION='autoprovide'
+			;;
+
+			autor | \
+			autore | \
+			autoreq | \
+			autorequ | \
+			autorequi | \
+			autorequir | \
+			autorequire)
+				LONG_OPTION="autorequire"
+			;;
+
+			b | \
+			ba | \
+			bat | \
+			batc | \
+			batch)
+				LONG_OPTION="batch"
+			;;
+
+			c | \
+			ca | \
+			cap | \
+			cap- | \
+			cap-f | \
+			cap-fr | \
+			cap-fro | \
+			cap-from | \
+			cap-from-)
+				AmbiguousOption
+				return 1
+			;;
+
+			cap-from-d | \
+			cap-from-db)
+				LONG_OPTION='cap-from-db'
+			;;
+
+			cap-from-f | \
+			cap-from-fs)
+				LONG_OPTION='cap-from-fs' # alias
+			;;
+
+			ch | \
+			cha | \
+			chan | \
+			chang | \
+			change | \
+			change-)
+				AmbiguousOption
+				return 1
+			;;
+
+			change-f | \
+			change-fi | \
+			change-fil | \
+			change-file | \
+			change-files)
+				LONG_OPTION="change-files"
+			;;
+
+			change-s | \
+			change-sp | \
+			change-spe | \
+			change-spec | \
+			change-spec-)
+				AmbiguousOption
+				return 1
+			;;
+
+			change-spec-c)
+				AmbiguousOption
+				return 1
+			;;
+
+			change-spec-ch | \
+			change-spec-cha | \
+			change-spec-chan | \
+			change-spec-chang | \
+			change-spec-change | \
+			change-spec-changel | \
+			change-spec-changelo | \
+			change-spec-changelog)
+				LONG_OPTION="change-spec-changelog"
+			;;
+
+			change-spec-co | \
+			change-spec-con | \
+			change-spec-conf | \
+			change-spec-confl | \
+			change-spec-confli | \
+			change-spec-conflic | \
+			change-spec-conflict | \
+			change-spec-conflicts)
+				LONG_OPTION="change-spec-conflicts"
+			;;
+
+			change-spec-d | \
+			change-spec-de | \
+			change-spec-des | \
+			change-spec-desc | \
+			change-spec-descr | \
+			change-spec-descri | \
+			change-spec-descrip | \
+			change-spec-descript | \
+			change-spec-descripti | \
+			change-spec-descriptio | \
+			change-spec-description)
+				LONG_OPTION="change-spec-description"
+			;;
+
+			change-spec-e | \
+			change-spec-en | \
+			change-spec-enh | \
+			change-spec-enha | \
+			change-spec-enhan | \
+			change-spec-enhanc | \
+			change-spec-enhance | \
+			change-spec-enhances)
+				LONG_OPTION="change-spec-enhances"
+			;;
+
+			change-spec-f | \
+			change-spec-fi | \
+			change-spec-fil | \
+			change-spec-file | \
+			change-spec-files)
+				LONG_OPTION="change-spec-files"
+			;;
+
+			change-spec-o | \
+			change-spec-ob | \
+			change-spec-obs | \
+			change-spec-obso | \
+			change-spec-obsol | \
+			change-spec-obsole | \
+			change-spec-obsolet | \
+			change-spec-obsoletes)
+				LONG_OPTION="change-spec-obsoletes"
+			;;
+
+			change-spec-p)
+				AmbiguousOption
+				return 1
+			;;
+
+			change-spec-po | \
+			change-spec-pos | \
+			change-spec-post)
+				LONG_OPTION="change-spec-post"
+			;;
+
+			change-spec-postt | \
+			change-spec-posttr | \
+			change-spec-posttra | \
+			change-spec-posttran | \
+			change-spec-posttrans)
+				LONG_OPTION="change-spec-posttrans"
+			;;
+
+			change-spec-postu | \
+			change-spec-postun)
+				LONG_OPTION="change-spec-postun"
+			;;
+
+			change-spec-pr | \
+			change-spec-pre)
+				LONG_OPTION="change-spec-pre"
+			;;
+
+			change-spec-pret | \
+			change-spec-pretr | \
+			change-spec-pretra | \
+			change-spec-pretran | \
+			change-spec-pretrans)
+				LONG_OPTION="change-spec-pretrans"
+			;;
+
+			change-spec-prea | \
+			change-spec-pream | \
+			change-spec-preamb | \
+			change-spec-preambl | \
+			change-spec-preamble)
+				LONG_OPTION="change-spec-preamble"
+			;;
+
+			change-spec-preu | \
+			change-spec-preun)
+				LONG_OPTION="change-spec-preun"
+			;;
+
+			change-spec-pro | \
+			change-spec-prov | \
+			change-spec-provi | \
+			change-spec-provid | \
+			change-spec-provide | \
+			change-spec-provides)
+				LONG_OPTION="change-spec-provides"
+			;;
+
+			change-spec-r | \
+			change-spec-re | \
+			change-spec-req | \
+			change-spec-requ | \
+			change-spec-requi | \
+			change-spec-requir | \
+			change-spec-require | \
+			change-spec-requires)
+				LONG_OPTION="change-spec-requires"
+			;;
+
+			change-spec-s | \
+			change-spec-su | \
+			change-spec-sug | \
+			change-spec-sugg | \
+			change-spec-sugge | \
+			change-spec-sugges | \
+			change-spec-suggest | \
+			change-spec-suggests)
+				LONG_OPTION="change-spec-suggests"
+			;;
+
+			change-spec-t | \
+			change-spec-tr | \
+			change-spec-tri | \
+			change-spec-trig | \
+			change-spec-trigg | \
+			change-spec-trigge | \
+			change-spec-trigger | \
+			change-spec-triggers)
+				LONG_OPTION="change-spec-triggers"
+			;;
+
+			change-spec-v | \
+			change-spec-ve | \
+			change-spec-ver | \
+			change-spec-veri | \
+			change-spec-verif | \
+			change-spec-verify | \
+			change-spec-verifys | \
+			change-spec-verifysc | \
+			change-spec-verifyscr | \
+			change-spec-verifyscri | \
+			change-spec-verifyscrip | \
+			change-spec-verifyscript)
+				LONG_OPTION="change-spec-verifyscript"
+			;;
+
+			change-spec-w | \
+			change-spec-wh | \
+			change-spec-who | \
+			change-spec-whol | \
+			change-spec-whole)
+				LONG_OPTION="change-spec-whole"
+			;;
+
+			co | \
+			com | \
+			comm | \
+			comme | \
+			commen | \
+			comment | \
+			comment- | \
+			comment-m | \
+			comment-mi | \
+			comment-mis | \
+			comment-miss | \
+			comment-missi | \
+			comment-missin | \
+			comment-missing)
+				LONG_OPTION="comment-missing"
+			;;
+
+			d | \
+			de)
+				AmbiguousOption
+				return 1
+			;;
+
+			deb | \
+			debu | \
+			debug)
+				LONG_OPTION="debug"
+			;;
+
+			def | \
+			defi | \
+			defin | \
+			define)
+				LONG_OPTION="define"
+			;;
+
+			di | \
+			dir | \
+			dire | \
+			direc | \
+			direct | \
+			directo | \
+			director | \
+			directory)
+				LONG_OPTION='directory'
+			;;
+
+			e | \
+			ed | \
+			edi | \
+			edit | \
+			edit-)
+				AmbiguousOption
+				return 1
+			;;
+
+			edit-c)
+				AmbiguousOption
+				return 1
+			;;
+
+			edit-ch | \
+			edit-cha | \
+			edit-chan | \
+			edit-chang | \
+			edit-change | \
+			edit-changel | \
+			edit-changelo | \
+			edit-changelog)
+				LONG_OPTION='edit-changelog'
+			;;
+
+			edit-co | \
+			edit-con | \
+			edit-conf | \
+			edit-confl | \
+			edit-confli | \
+			edit-conflic | \
+			edit-conflict | \
+			edit-conflicts)
+				LONG_OPTION='edit-conflicts'
+			;;
+
+			edit-d | \
+			edit-de | \
+			edit-des | \
+			edit-desc | \
+			edit-descr | \
+			edit-descri | \
+			edit-descrip | \
+			edit-descript | \
+			edit-descripti | \
+			edit-descriptio | \
+			edit-description)
+				LONG_OPTION='edit-description'
+			;;
+
+			edit-e | \
+			edit-en | \
+			edit-enh | \
+			edit-enha | \
+			edit-enhan | \
+			edit-enhanc | \
+			edit-enhance | \
+			edit-enhances)
+				LONG_OPTION="edit-enhances"
+			;;
+
+			edit-f | \
+			edit-fi | \
+			edit-fil | \
+			edit-file | \
+			edit-files)
+				LONG_OPTION='edit-files'
+			;;
+
+			edit-o | \
+			edit-ob | \
+			edit-obs | \
+			edit-obso | \
+			edit-obsol | \
+			edit-obsole | \
+			edit-obsolet | \
+			edit-obsolete | \
+			edit-obsoletes)
+				LONG_OPTION='edit-obsoletes'
+			;;
+
+			edit-p)
+				AmbiguousOption
+				return 1
+			;;
+
+			edit-po | \
+			edit-pos | \
+			edit-post)
+				LONG_OPTION='edit-post'
+			;;
+
+			edit-postt | \
+			edit-posttr | \
+			edit-posttra | \
+			edit-posttran | \
+			edit-posttrans)
+				LONG_OPTION='edit-posttrans'
+			;;
+
+			edit-postu | \
+			edit-postun)
+				LONG_OPTION='edit-postun'
+			;;
+
+			edit-pr | \
+			edit-pre)
+				LONG_OPTION='edit-pre'
+			;;
+
+			edit-pret | \
+			edit-pretr | \
+			edit-pretra | \
+			edit-pretran | \
+			edit-pretrans)
+				LONG_OPTION='edit-pretrans'
+			;;
+
+			edit-prea | \
+			edit-pream | \
+			edit-preamb | \
+			edit-preambl | \
+			edit-preamble)
+				LONG_OPTION='edit-preamble'
+			;;
+
+			edit-preu | \
+			edit-preun)
+				LONG_OPTION='edit-preun'
+			;;
+
+			edit-pro | \
+			edit-prov | \
+			edit-provi | \
+			edit-provid | \
+			edit-provide | \
+			edit-provides)
+				LONG_OPTION='edit-provides'
+			;;
+
+			edit-r | \
+			edit-re | \
+			edit-req | \
+			edit-requ | \
+			edit-requi | \
+			edit-requir | \
+			edit-require | \
+			edit-requires)
+				LONG_OPTION='edit-requires'
+			;;
+
+			edit-s)
+				AmbiguousOption
+				return 1
+			;;
+
+			edit-sp | \
+			edit-spe | \
+			edit-spec)
+				LONG_OPTION='edit-whole' # alias
+			;;
+
+			edit-su | \
+			edit-sug | \
+			edit-sugg | \
+			edit-sugge | \
+			edit-sugges | \
+			edit-suggest | \
+			edit-suggests)
+				LONG_OPTION="edit-suggests"
+			;;
+
+			edit-t | \
+			edit-tr | \
+			edit-tri | \
+			edit-trig | \
+			edit-trigg | \
+			edit-trigge | \
+			edit-trigger | \
+			edit-triggers)
+				LONG_OPTION='edit-triggers'
+			;;
+
+			edit-v | \
+			edit-ve | \
+			edit-ver | \
+			edit-veri | \
+			edit-verif | \
+			edit-verify | \
+			edit-verifys | \
+			edit-verifysc | \
+			edit-verifyscr | \
+			edit-verifyscri | \
+			edit-verifyscrip | \
+			edit-verifyscript)
+				LONG_OPTION='edit-verifyscript'
+			;;
+
+			edit-w | \
+			edit-wh | \
+			edit-who | \
+			edit-whol | \
+			edit-whole)
+				LONG_OPTION='edit-whole'
+			;;
+
+			f | \
+			fi | \
+			fil | \
+			filt | \
+			filte | \
+			filter)
+				LONG_OPTION='change-spec-whole' # alias
+			;;
+			
+			h | \
+			he | \
+			hel | \
+			help)
+				LONG_OPTION='help'
+			;;
+
+			help- | \
+			help-p | \
+			help-pl | \
+			help-plu | \
+			help-plug | \
+			help-plugi | \
+			help-plugin | \
+			help-plugins)
+				LONG_OPTION='help-plugins'
+			;;
+
+			inc | \
+			incl | \
+			inclu | \
+			includ | \
+			include)
+				LONG_OPTION='include'
+			;;
+
+			ins | \
+			inst | \
+			insta | \
+			instal | \
+			install)
+				LONG_OPTION='install'
+			;;
+
+			k | \
+			ke | \
+			kee | \
+			keep | \
+			keep- | \
+			keep-p | \
+			keep-pe | \
+			keep-per | \
+			keep-perm)
+				LONG_OPTION='pug-from-fs' # alias
+			;;
+
+			l | \
+			li | \
+			lis | \
+			list | \
+			list- | \
+			list-p | \
+			list-pl | \
+			list-plu | \
+			list-plug | \
+			list-plugi | \
+			list-plugin) \
+				LONG_OPTION='list-plugin'
+			;;
+
+			m)
+				AmbiguousOption
+				return 1
+			;;
+			md | \
+			md5 | \
+			md5- | \
+			md5-c | \
+			md5-co | \
+			md5-com | \
+			md5-comp | \
+			md5-compa | \
+			md5-compat | \
+			md5-compat- | \
+			md5-compat-d | \
+			md5-compat-di | \
+			md5-compat-dig | \
+			md5-compat-dige | \
+			md5-compat-diges | \
+			md5-compat-digest)
+				LONG_OPTION='md5-compat-digest'
+			;;
+
+			mo | \
+			mod | \
+			modi | \
+			modif | \
+			modify)
+				LONG_OPTION='change-files' # alias
+			;;
+
+			n | \
+			no | \
+			not | \
+			note | \
+			notes | \
+			notest | \
+			notest- | \
+			notest-i | \
+			notest-in | \
+			notest-ins | \
+			notest-inst | \
+			notest-insta | \
+			notest-instal | \
+			notest-install)
+				LONG_OPTION='notest-install'
+			;;
+
+			p)
+				AmbiguousOption
+				return 1
+			;;
+
+			pa | \
+			pac | \
+			pack | \
+			packa | \
+			packag | \
+			package)
+				LONG_OPTION='package'
+                	;;
+
+			pu | \
+			pug | \
+			pug- | \
+			pug-f | \
+			pug-fr | \
+			pug-fro | \
+			pug-from | \
+			pug-from-)
+				AmbiguousOption
+				return 1
+			;;
+
+			pug-from-d | \
+			pug-from-db)
+				LONG_OPTION='pug-from-db'
+			;;
+
+			pug-from-f | \
+			pug-from-fs)
+				LONG_OPTION='pug-from-fs' # alias
+			;;
+
+			r | \
+			re | \
+			rel | \
+			rele | \
+			relea | \
+			releas | \
+			release) \
+				LONG_OPTION='release'
+			;;
+
+			s | \
+			sp | \
+			spe | \
+			spec | \
+			spec- | \
+			spec-o | \
+			spec-on | \
+			spec-onl | \
+			spec-only)
+				LONG_OPTION='spec-only'
+			;;
+
+			v | \
+			ve | \
+			ver )
+				AmbiguousOption
+				return 1
+			;;
+
+			verb | \
+			verbo | \
+			verbos | \
+			verbose)
+				LONG_OPTION='verbose'
+			;;
+
+			veri | \
+			verif | \
+			verify)
+				LONG_OPTION='verify'
+			;;
+
+			vers | \
+			versi | \
+			versio | \
+			version)
+				LONG_OPTION='version'
+			;;
+
+			w | \
+			wa | \
+			war | \
+			warn | \
+			warni | \
+			warnin | \
+			warning)
+				LONG_OPTION='warning'
+			;;
+
+			*)
+				UnrecognizedOption
+				return 1
+			;;
+		esac || return
+
+		# Ok, finally, let us process options
+		SHORT_OPTION="$opt"
+		case "$LONG_OPTION" in
+			additional)
+				RequeredArgument || return
+				additional="$additional $OPTARG"
+			;;
+
+			autoprovide)
+				autoprovide="yes"
+			;;
+
+			autorequire)
+				autorequire="yes"
+			;;
+
+			batch)
+				batch="yes"
+			;;
+
+			cap-from-db)
+				RPMREBUILD_CAP_FROM_FS="no"
+			;;
+
+			cap-from-fs)
+				RPMREBUILD_CAP_FROM_FS="yes"
+			;;
+
+			change-files)
+				RequeredArgument                || return
+				CreateProcessing "$LONG_OPTION" || return
+			;;
+
+			change-spec-changelog    | \
+			change-spec-conflicts    | \
+			change-spec-description  | \
+			change-spec-enhances     | \
+			change-spec-files        | \
+			change-spec-obsoletes    | \
+			change-spec-pre          | \
+			change-spec-pretrans     | \
+			change-spec-preamble     | \
+			change-spec-preun        | \
+			change-spec-post         | \
+			change-spec-posttrans    | \
+			change-spec-postun       | \
+			change-spec-provides     | \
+			change-spec-requires     | \
+			change-spec-suggests     | \
+			change-spec-triggers     | \
+			change-spec-verifyscript | \
+			change-spec-whole)
+				RequeredArgument                || return
+				CreateProcessing "$LONG_OPTION" || return
+			;;
+
+			comment-missing)
+				RequeredArgument || return
+				case "x$OPTARG" in
+			   		x[yY]*)
+						RPMREBUILD_COMMENT_MISSING="yes"
+					;;
+
+                           		*)
+						RPMREBUILD_COMMENT_MISSING="yes"
+					;;
+				esac
+			;;
+
+			debug)
+				debug="yes"
+			;;
+
+			define)
+				RequeredArgument || return
+				rpm_defines="$rpm_defines --define '$OPTARG'"
+			;;
+
+			directory)
+				RequeredArgument || return
+				rpmdir="$OPTARG"
+				rpm_defines="$rpm_defines --define '_rpmdir $rpmdir'" 
+			;;
+
+			edit-changelog    | \
+			edit-conflicts    | \
+			edit-description  | \
+			edit-enhances     | \
+			edit-files        | \
+			edit-obsoletes    | \
+			edit-pre          | \
+			edit-pretrans     | \
+			edit-preamble     | \
+			edit-preun        | \
+			edit-post         | \
+			edit-posttrans    | \
+			edit-postun       | \
+			edit-provides     | \
+			edit-requires     | \
+			edit-suggests     | \
+			edit-triggers     | \
+			edit-verifyscript | \
+			edit-whole)
+				CreateProcessing "$LONG_OPTION" || return
+			;;
+
+			help)
+				Usage
+				NEED_EXIT=0
+				return 0
+			;;
+
+			help-plugins)
+				Usage_Plugins
+				NEED_EXIT=0
+				return 0
+			;;
+
+			include)
+				RequeredArgument || return
+				OPTIND_INCR=""
+				if [ -r "$OPTARG" ]
+				then
+					# find local file
+					INCLUDE_FILE=$OPTARG
+				elif [ -r "$RPMREBUILD_PLUGINS_DIR/$OPTARG" ]
+				then
+					# find in plugin dir
+					INCLUDE_FILE="$RPMREBUILD_PLUGINS_DIR/$OPTARG"
+				else 
+					Error "$FileNotFound : '$OPTARG'"
+					return 1
+				fi
+				Include || return
+			;;
+
+			install)
+                   		package_install="y"
+			;;
+
+			list-plugin)
+				List_Plugins
+				NEED_EXIT=0
+				return 0
+			;;
+
+			md5-compat-digest)
+				md5_compat_digest="yes"
+				# or by plugin :
+				#INCLUDE_FILE="$RPMREBUILD_PLUGINS_DIR/compat_digest.plug"
+				#Include || return
+			;;	
+			notest-install)
+				NOTESTINSTALL=1
+			;;
+
+			package)
+                   		package_flag="-p"
+                	;;
+
+			pug-from-db)
+				RPMREBUILD_PUG_FROM_FS="no"
+			;;
+
+			pug-from-fs)
+				RPMREBUILD_PUG_FROM_FS="yes"
+			;;
+
+			release)
+				RELEASE_NEW="$OPTARG"
+			;;
+
+			spec-only)
+				RequeredArgument || return
+				spec_only="yes"
+				specfile="$OPTARG"
+			;;
+
+			verbose)
+				rpm_verbose="--verbose"
+			;;
+
+			verify)
+				RequeredArgument || return
+				case "x$OPTARG" in
+			   		x[yY]*) verify="yes";;
+                           		*)      verify="no";;
+				esac
+			;;
+
+			version)
+				set -e
+					source $MY_LIB_DIR/VERSION
+				set +e
+				echo "$VERSION"
+				NEED_EXIT=0
+				return 0
+			;;
+
+			warning)
+				RPMREBUILD_WARNING="yes"
+			;;
+
+			*)
+				Error "$InternalError: LONG_OPTION='$LONG_OPTION'"
+				return 1
+			;;
+		esac || return
+	return 0
+}
+###############################################################################
+function CommandLineParsing
+{
+	# Default flags' values. To be sure they don't came from environment
+	NEED_EXIT=""  # if not empty should be set to desired exit status
+	additional=""
+	autoprovide="no"
+	autorequire="no"
+	batch="no"
+	debug=""
+	md5_compat_digest="no"
+	need_change_files="no"
+	need_change_spec="no"
+	rpm_defines=""
+	rpmdir=""
+	package_flag=""
+	package_install=""
+	spec_only="no"
+	specfile=""
+	verify="yes"
+	rpm_verbose="--quiet"
+
+	export RPMREBUILD_COMMENT_MISSING="no"
+	export RPMREBUILD_PUG_FROM_FS="no"
+	export RPMREBUILD_WARNING="no"
+
+	PAQUET=""
+	PAQUET_NAME=""
+
+	export LONG_OPTION
+
+	while getopts "5a:bc:d:D:ef:hi:Iklm:npPRrs:vVwy:-:" opt; do
+		OPTIND_INCR=""
+		case "$opt" in
+			5) LONG_OPTION=md5-compat-digest;;
+			a) LONG_OPTION=additional;;
+			b) LONG_OPTION=batch;;
+			c) LONG_OPTION=comment-missing;;
+			d) LONG_OPTION=dir;;
+			D) LONG_OPTION=define;;
+			e) LONG_OPTION=edit-spec;;
+			f) LONG_OPTION=filter;;
+			i) LONG_OPTION=include;;
+			I) LONG_OPTION=install;;
+			k) LONG_OPTION=keep-perm;;
+			l) LONG_OPTION=list-plugin;;
+			m) LONG_OPTION=modify;;    
+			n) LONG_OPTION=notest-install;;
+			p) LONG_OPTION=package;;
+			P) LONG_OPTION=autoprovide;;
+			r) LONG_OPTION=release;;
+			R) LONG_OPTION=autorequire;;
+			s) LONG_OPTION=spec-only;;
+			h) LONG_OPTION=help;;
+			v) LONG_OPTION=verbose;;
+			V) LONG_OPTION=version;;
+			w) LONG_OPTION=warning;;
+			y) LONG_OPTION=verify;;
+
+                	-)
+	        		case "x$OPTARG" in
+					x*=*)
+						LONG_OPTION=${OPTARG%%=*}
+						OPTARG=${OPTARG#*=}
+						OPTARG_EXIST=1
+					;;
+
+					*)
+                   				LONG_OPTION="$OPTARG"
+                   				if [ $OPTIND -le $# ]; then
+                      					eval OPTARG=\$$OPTIND
+                      					OPTARG_EXIST=1
+							OPTIND_INCR=1
+                   				else
+                      					OPTARG=""
+                      					OPTARG_EXIST=""
+                   				fi
+					;;
+				esac
+               		;;
+
+			*)
+				Try_Help
+				return 1
+			;;
+		esac
+
+		# Get "full" long option
+		ProcessLongOptions || return
+		[ "x$NEED_EXIT" = "x" ] || return $NEED_EXIT
+	done || return
+
+	# controls
+	CheckOptions
+
+	CreateProcessing "fini" || return
+	[ "X$spec_only" = "Xyes" -a "X$need_change_files" = "Xyes" ] && {
+		Echo "$NotCompatibleOption '--spec_only' , '--change-files'"
+		return 1
+	}
+
+	shift $((OPTIND - 1))
+	case $# in
+   		0)
+			Error "$PackageArgumentMissing"
+			Try_Help
+			return 1
+   		;;
+
+   		1) # One argument, it's ok
+      			PAQUET="$1"
+      			if [ "x$package_flag" = "x" ]; then
+         			PAQUET_NAME=$( basename $PAQUET )
+      			else
+				# argument should be a file
+				if [ -f $PAQUET ]; then
+					PAQUET_NAME=$( basename $PAQUET)
+					# check if it is an rpm file
+					# rem : 'file' sometimes does not return 
+					# "RPM" because some other magic triggers
+					# before the RPM magic check runs
+					tst_rpm=$( rpm -qp $PAQUET  2>/dev/null )
+					if [ $? -eq 0 ]; then
+							: #ok
+					else
+						Error "$NotAnRpm '$PAQUET'"
+						return 1
+					fi
+				else
+					Error "$FileNotFound '$PAQUET'"
+					return 1
+				fi
+      			fi
+		;;
+
+		*)
+			Error "$PackageMultiple"
+			Try_Help
+			return 1
+		;;
+	esac || return
+
+	if [ "x$rpmdir" = "x" ]; then
+		# There is no rpmdir specified 
+		# Let us find native rpmdir value
+		# (with respect to defines)
+		rpmdir="$(eval rpm $rpm_defines --eval %_rpmdir)" || return
+	else
+		# There is rpmdir specified.
+		# Let us find it's absolute path.
+		# Yeah, a bit ugly, but simple and seems to work...
+		Mkdir_p "$rpmdir" # Not check exit status here
+		rpmdir="$(cd $rpmdir && echo $PWD)" || {
+			Error "$CannotChdir '$rpmdir'"
+			return 1
+		}
+	fi
+	return 0
+}
+##############################################################################
+function CheckOptions
+{
+	if [ -n "$package_install" ]
+	then
+		# force package test
+		NOTESTINSTALL=""
+	elif [ -n "$package_flag" ]
+	then
+		# no test if work on files (not installed)
+		NOTESTINSTALL="1"
+	fi
+	return 0
+}
+###############################################################################

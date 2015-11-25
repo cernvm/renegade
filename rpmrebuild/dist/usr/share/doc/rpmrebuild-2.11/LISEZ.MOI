@@ -1,0 +1,47 @@
+sommaire
+--------
+rpmrebuild est un outil qui permet de fabriquer un fichier rpm
+depuis la base rpm des packages installes.
+Il permet egalement de modifier rapidement un package.
+
+comment ça marche
+-----------------
+La base rpm contient beaucoup de choses, tout ce qu'il faut pour refaire
+un package (y compris les scripts de pre/post installation).
+On peut y accéder par script, par des requêtes rpm -q, ou via une
+API C. Pour la simplicité et la portabilité, j'ai choisi le shell-script, surtout qu'il 
+n'y a pas de problèmes de performances.
+
+Attention :
+-----------
+- on reconstruit le package a partir des fichiers installés, donc
+toute modification apportée depuis l'installation sera intégrée au nouveau package,
+mais je suis gentil, j'affiche ces modifications.
+- si le package original etait signe, le nouveau ne le sera pas
+
+Dernière remarque 
+-----------------
+le logiciel rpm intègre depuis peu, une option permettant de
+reconstruire un package, mais  :
+- ce n'est pas documente dans le man (seulement dans rpm --help)
+- ce n'est qu'une option de désinstallation (rpm -e --repackage), ce qui n'est pas toujours possible
+  (dependances)
+- pour info, le résultat va sur /var/spool/up2date/
+
+historique
+----------
+En 1999, j'ai eu un gros problème, lors de la mise a jour d'un package : la nouvelle version
+marchait moins bien que l'ancienne. Je devais donc faire un "retour arrière" rapide, mais la,
+impossible de remettre la main sur le fichier rpm, je ne l'avais pas conservé, et cette version était
+introuvable sur le net. Par contre, je l'avais installé sur une autre machine ...
+
+N'ayant pas trouve d'outil pour ça sur le net, j'ai donc écrit une première version de ce script,
+qui me servait de temps en temps.
+En juillet 2002, par contre, j'ai eu une demande de la part de collègues, pour un besoin équivalent.
+Comme le produit semblait correspondre a une demande, j'ai donc décide de le rendre public sur le net,
+via un projet sous licence libre (GNU Public License).
+
+auteur
+------
+Eric Gerbier <gerbier@users.sourceforge.net>
+URL du projet : http://rpmrebuild.sourceforge.net

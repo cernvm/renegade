@@ -1,0 +1,6 @@
+/usr/bin/rpmrebuild
+/usr/lib/rpmrebuild
+/usr/share/doc/rpmrebuild*
+/usr/share/man/man1/*
+/usr/share/man/fr_FR/man1/*
+/usr/share/man/fr_FR.UTF-8/man1/*

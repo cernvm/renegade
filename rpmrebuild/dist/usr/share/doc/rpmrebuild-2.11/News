@@ -1,0 +1,30 @@
+* 2013-11-22 : release 2.11, option install
+* 2013-08-01 : release 2.10, patch for pretrans/postrans, DISTTAG
+* 2013-01-18 : release 2.9, fix to work with rpm 4.10 (Fedora 18)
+* 2012-07-11 : release 2.8, SUGGESTS/ENHANCES rpm tag, --cap-from-fs/cap-from-db options
+* 2012-06-06 : release 2.7, RPMREBUILD_OPTS, unset_tag, un_prelink, posix capability, multi-arch
+* 2011-07-12 : release 2.6, fix bug when working on source packages, ghost files
+* 2011-04-15 : release 2.5, patch from ndyankov : support for broken symlinks, will work on AIX with rpm 3
+* 2009-12-11 : release 2.4-1, --list-plugin and --md5-compat-digest options
+* 2009-01-09 : release 2.3-1, do not use popt any more, fix problem with rpm 4.6 (fedora10), that ignore BuildRoot
+* 2008-08-06 : release 2.2.3-1, fix a problem with new rpm security on mandriva (defaultbuildroot)
+* 2008-04-28 : release 2.2.2-1, fix bug when working on package file with path
+* 2008-04-02 : release 2.2.1-1, utf-8, set_tag and demofiles plugin, bugfix on %attr
+* 2007-10-22 : release 2.2.0-1, internationalisation message system
+* 2007-06-26 : release 2.1.1-1, solve bug for rpm 3.x, better bug report
+* 2007-05-15 : release 2.1.0-1, allow concurrent use, check tags, bug report
+* 2005-05-31 : release 2.0.4-1, fix some problems (tmpdir), improved nodoc plugin
+* 2005-05-20 : release 2.0.3-1, new options --release, --notest_install
+* 2005-03-04 : release 2.0.2-1, bug fix for 2.x releases (BuildArch)
+* 2005-02-25 : release 2.0.1-1, fix for rpm-4.3
+* 2005-02-21 : release 2.0.0-1, major code rewrite to be more modular, allow change in specific spec sections
+* 2004-08-16 : release 1.4.7-3, dependency changes to work on suse, rpmlint check, bug fix
+* 2004-07-20 : release 1.4.7-1, bugs fix, working on file packages, avoid some sed treatments
+* 2004-05-24 : release 1.4.6-4, security: change working directory to ~/.tmp/rpmrebuild, bug fix
+* 2004-05-19 : release 1.4.6-3, add remaining dependencies, long option abbreviation
+* 2004-05-06 : release 1.4.6-2, add rpm-build dependency for rpm > 4.0
+* 2004-01-01 : release 1.4.6-1, add --autoprovide and --autorequire flags
+* 2003-11-14 : release 1.4.5-2, bug fix
+* 2003-07-10 : release 1.4.5-1, add some flags to improve performances (-y/-c)
+* 2003-06-18 : release 1.4.4-1, now can modify an rpm file
+* 2003-06-10 : release 1.4.3-1, to work on rpm 4.2 (redhat 9 for exemple)

@@ -1,0 +1,25 @@
+###############################################################################
+#    unset_tag
+#      it's a part of the rpmrebuild project
+#
+#    Copyright (C) 2002 by Eric Gerbier
+#    Bug reports to: gerbier@users.sourceforge.net
+#      or	   : valery_reznic@users.sourceforge.net
+#    $Id: unset_tag.plug 744 2012-05-15 09:41:43Z gerbier $
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+###############################################################################
+# include file for unset_tag plugin
+# allow a quicker use with : rpmrebuild --include unset_tag
+# if you use the TAG_ID environment variables
+
+change-spec-preamble unset_tag.sh
