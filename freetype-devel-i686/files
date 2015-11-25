@@ -1,1 +1,2 @@
-/usr
+/usr/lib/*
+/usr/include/freetype2/freetype/config/ftconfig-32.h

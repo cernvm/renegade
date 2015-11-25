@@ -1,2 +1,5 @@
-/usr
-/lib
+/usr/lib/*
+/lib/*
+/usr/libexec/getconf/*
+/usr/sbin/glibc_post_upgrade.i686
+/usr/sbin/iconvconfig.i686
