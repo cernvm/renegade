@@ -9,6 +9,7 @@ PACKAGES = \
 	azure-cli \
 	cctools \
 	CERN-CA-certs \
+	cern-cloudinit-modules \
 	cernvm-config \
 	cernvm-online-guest \
 	cernvm-pam \
