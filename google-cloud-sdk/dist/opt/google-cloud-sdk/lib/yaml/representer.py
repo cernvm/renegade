@@ -7,11 +7,6 @@ from nodes import *
 
 import datetime
 
-try:
-    set
-except NameError:
-    from sets import Set as set
-
 import sys, copy_reg, types
 
 class RepresenterError(YAMLError):
@@ -286,6 +281,7 @@ SafeRepresenter.add_representer(set,
 
 SafeRepresenter.add_representer(datetime.date,
         SafeRepresenter.represent_date)
+
 SafeRepresenter.add_representer(datetime.datetime,
         SafeRepresenter.represent_datetime)
 

@@ -40,7 +40,7 @@ class Layer1(AWSQueryConnection):
                  proxy=None, proxy_port=None,
                  proxy_user=None, proxy_pass=None, debug=0,
                  https_connection_factory=None, region=None, path='/',
-                 api_version=None, security_token=None):
+                 api_version=None, security_token=None, profile_name=None):
         if not region:
             region = RegionInfo(self, self.DefaultRegionName,
                                 self.DefaultRegionEndpoint)
@@ -51,7 +51,7 @@ class Layer1(AWSQueryConnection):
                                     proxy_user, proxy_pass,
                                     self.region.endpoint, debug,
                                     https_connection_factory, path,
-                                    security_token)
+                                    security_token, profile_name=profile_name)
 
     def _required_auth_capability(self):
         return ['hmac-v4']
@@ -63,7 +63,7 @@ class Layer1(AWSQueryConnection):
     def _get_response(self, action, params, path='/', verb='GET'):
         params['ContentType'] = 'JSON'
         response = self.make_request(action, params, path, verb)
-        body = response.read()
+        body = response.read().decode('utf-8')
         boto.log.debug(body)
         if response.status == 200:
             return json.loads(body)
@@ -351,9 +351,9 @@ class Layer1(AWSQueryConnection):
             self.build_list_params(params, options_to_remove,
                                    'OptionsToRemove.member')
         if tier_name and tier_type and tier_version:
-            params['Tier.member.Name'] = tier_name
-            params['Tier.member.Type'] = tier_type
-            params['Tier.member.Version'] = tier_version
+            params['Tier.Name'] = tier_name
+            params['Tier.Type'] = tier_type
+            params['Tier.Version'] = tier_version
         return self._get_response('CreateEnvironment', params)
 
     def create_storage_location(self):
@@ -1138,9 +1138,9 @@ class Layer1(AWSQueryConnection):
             self.build_list_params(params, options_to_remove,
                                    'OptionsToRemove.member')
         if tier_name and tier_type and tier_version:
-            params['Tier.member.Name'] = tier_name
-            params['Tier.member.Type'] = tier_type
-            params['Tier.member.Version'] = tier_version
+            params['Tier.Name'] = tier_name
+            params['Tier.Type'] = tier_type
+            params['Tier.Version'] = tier_version
         return self._get_response('UpdateEnvironment', params)
 
     def validate_configuration_settings(self, application_name,

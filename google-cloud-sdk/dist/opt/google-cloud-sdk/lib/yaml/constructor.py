@@ -7,11 +7,6 @@ from nodes import *
 
 import datetime
 
-try:
-    set
-except NameError:
-    from sets import Set as set
-
 import binascii, re, sys, types
 
 class ConstructorError(MarkedYAMLError):
@@ -37,6 +32,13 @@ class BaseConstructor(object):
         if self.check_node():
             return self.construct_document(self.get_node())
 
+    def get_single_data(self):
+        # Ensure that the stream contains a single document and construct it.
+        node = self.get_single_node()
+        if node is not None:
+            return self.construct_document(node)
+        return None
+
     def construct_document(self, node):
         data = self.construct_object(node)
         while self.state_generators:
@@ -51,17 +53,16 @@ class BaseConstructor(object):
         return data
 
     def construct_object(self, node, deep=False):
+        if node in self.constructed_objects:
+            return self.constructed_objects[node]
         if deep:
             old_deep = self.deep_construct
             self.deep_construct = True
-        if node in self.constructed_objects:
-            return self.constructed_objects[node]
         if node in self.recursive_objects:
             raise ConstructorError(None, None,
                     "found unconstructable recursive node", node.start_mark)
         self.recursive_objects[node] = None
         constructor = None
-        state_constructor = None
         tag_suffix = None
         if node.tag in self.yaml_constructors:
             constructor = self.yaml_constructors[node.tag]
@@ -314,7 +315,10 @@ class SafeConstructor(BaseConstructor):
         second = int(values['second'])
         fraction = 0
         if values['fraction']:
-            fraction = int(values['fraction'][:6].ljust(6, '0'))
+            fraction = values['fraction'][:6]
+            while len(fraction) < 6:
+                fraction += '0'
+            fraction = int(fraction)
         delta = None
         if values['tz_sign']:
             tz_hour = int(values['tz_hour'])
@@ -493,11 +497,7 @@ class Constructor(SafeConstructor):
             raise ConstructorError("while constructing a Python object", mark,
                     "expected non-empty name appended to the tag", mark)
         if u'.' in name:
-            # Python 2.4 only
-            #module_name, object_name = name.rsplit('.', 1)
-            items = name.split('.')
-            object_name = items.pop()
-            module_name = '.'.join(items)
+            module_name, object_name = name.rsplit('.', 1)
         else:
             module_name = '__builtin__'
             object_name = name

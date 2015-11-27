@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,50 +12,50 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Implementation of Unix-like stat command for cloud storage providers."""
 
 from __future__ import absolute_import
-import binascii
+
 import logging
-import re
 import sys
 
+from gslib.bucket_listing_ref import BucketListingObject
+from gslib.cloud_api import AccessDeniedException
+from gslib.cloud_api import NotFoundException
 from gslib.command import Command
-from gslib.command import COMMAND_NAME
-from gslib.command import COMMAND_NAME_ALIASES
-from gslib.command import FILE_URIS_OK
-from gslib.command import MAX_ARGS
-from gslib.command import MIN_ARGS
-from gslib.command import PROVIDER_URIS_OK
-from gslib.command import SUPPORTED_SUB_ARGS
-from gslib.command import URIS_START_ARG
+from gslib.command_argument import CommandArgument
+from gslib.cs_api_map import ApiSelector
 from gslib.exception import CommandException
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
-from gslib.util import PrintFullInfoAboutUri
+from gslib.exception import InvalidUrlError
+from gslib.storage_url import ContainsWildcard
+from gslib.storage_url import StorageUrlFromString
 from gslib.util import NO_MAX
-from boto import InvalidUriError
+from gslib.util import PrintFullInfoAboutObject
 
-_detailed_help_text = ("""
+
+_SYNOPSIS = """
+  gsutil stat url...
+"""
+
+_DETAILED_HELP_TEXT = ("""
 <B>SYNOPSIS</B>
-  gsutil stat uri...
+""" + _SYNOPSIS + """
 
 
 <B>DESCRIPTION</B>
-  The stat command will output details about the specified object URIs.
+  The stat command will output details about the specified object URLs.
   It is similar to running:
 
     gsutil ls -L gs://some-bucket/some-object
 
-  but is more efficient because it avoids performing bucket listings and extra
-  ACL GET's before reading each object's metadata. It performs a single HTTP
-  HEAD request per listed object.
+  but is more efficient because it avoids performing bucket listings and gets
+  the minimum necessary amount of object metadata. Moreover, because it avoids
+  performing bucket listings (which are eventually consistent) the gsutil stat
+  command provides a strongly consistent way to check for the existence (and
+  read the metadata) of an object.
 
   The gsutil stat command will, however, perform bucket listings if you specify
-  URIs using wildcards.
+  URLs using wildcards.
 
   If run with the gsutil -q option nothing will be printed, e.g.:
 
@@ -66,63 +67,87 @@ _detailed_help_text = ("""
   Note: Unlike the gsutil ls command, the stat command does not support
   operations on sub-directories. For example, if you run the command:
 
-    gsutil -q stat gs://some-bucket/some-object/
+    gsutil -q stat gs://some-bucket/some-subdir/
 
-  gsutil will look up information about the object "some-object/" (with a
-  trailing slash) inside bucket "some-bucket", as opposed to operating on
-  objects nested under gs://some-bucket/some-object. Unless you actually have an
-  object with that name, the operation will fail.
+  gsutil will look for information about an object called "some-subdir/" (with a
+  trailing slash) inside the bucket "some-bucket", as opposed to operating on
+  objects nested under gs://some-bucket/some-subdir/. Unless you actually have
+  an object with that name, the operation will fail. However, you can use the
+  stat command on objects within subdirectories. For example, this command will
+  work as expected:
+
+    gsutil -q stat gs://some-bucket/some-subdir/file.txt
 """)
 
-# TODO: Add ability to stat buckets.
 
+# TODO: Add ability to stat buckets.
 class StatCommand(Command):
   """Implementation of gsutil stat command."""
 
-  # Command specification (processed by parent class).
-  command_spec = {
-    # Name of command.
-    COMMAND_NAME : 'stat',
-    # List of command name aliases.
-    COMMAND_NAME_ALIASES : [],
-    # Min number of args required by this command.
-    MIN_ARGS : 1,
-    # Max number of args required by this command, or NO_MAX.
-    MAX_ARGS : NO_MAX,
-    # Getopt-style string specifying acceptable sub args.
-    SUPPORTED_SUB_ARGS : '',
-    # True if file URIs acceptable for this command.
-    FILE_URIS_OK : False,
-    # True if provider-only URIs acceptable for this command.
-    PROVIDER_URIS_OK : False,
-    # Index in args of first URI arg.
-    URIS_START_ARG : 0,
-  }
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'stat',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : [],
-    # Type of help:
-    HELP_TYPE : HelpType.COMMAND_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Display object status',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Command specification. See base class for documentation.
+  command_spec = Command.CreateCommandSpec(
+      'stat',
+      command_name_aliases=[],
+      usage_synopsis=_SYNOPSIS,
+      min_args=1,
+      max_args=NO_MAX,
+      supported_sub_args='',
+      file_url_ok=False,
+      provider_url_ok=False,
+      urls_start_arg=0,
+      gs_api_support=[ApiSelector.XML, ApiSelector.JSON],
+      gs_default_api=ApiSelector.JSON,
+      argparse_arguments=[
+          CommandArgument.MakeZeroOrMoreCloudURLsArgument()
+      ]
+  )
+  # Help specification. See help_provider.py for documentation.
+  help_spec = Command.HelpSpec(
+      help_name='stat',
+      help_name_aliases=[],
+      help_type='command_help',
+      help_one_line_summary='Display object status',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )
 
-  # Command entry point.
   def RunCommand(self):
-    for uri_str in self.args:
-      uri = self.suri_builder.StorageUri(uri_str)
-      if not uri.names_object():
-        raise CommandException('The stat command only works with object URIs')
-      for blr in self.WildcardIterator(uri):
-        if logging.getLogger().isEnabledFor(logging.INFO):
-          PrintFullInfoAboutUri(blr.uri, False, self.headers)
+    """Command entry point for stat command."""
+    # List of fields we'll print for stat objects.
+    stat_fields = ['updated', 'cacheControl', 'contentDisposition',
+                   'contentEncoding', 'contentLanguage', 'size', 'contentType',
+                   'componentCount', 'metadata', 'crc32c', 'md5Hash', 'etag',
+                   'generation', 'metageneration']
+    found_nonmatching_arg = False
+    for url_str in self.args:
+      arg_matches = 0
+      url = StorageUrlFromString(url_str)
+      if not url.IsObject():
+        raise CommandException('The stat command only works with object URLs')
+      try:
+        if ContainsWildcard(url_str):
+          blr_iter = self.WildcardIterator(url_str).IterObjects(
+              bucket_listing_fields=stat_fields)
         else:
-          try:
-            uri.get_key(False, headers=self.headers)
-          except InvalidUriError as e:
-            return 1
+          single_obj = self.gsutil_api.GetObjectMetadata(
+              url.bucket_name, url.object_name, generation=url.generation,
+              provider=url.scheme, fields=stat_fields)
+          blr_iter = [BucketListingObject(url, root_object=single_obj)]
+        for blr in blr_iter:
+          if blr.IsObject():
+            arg_matches += 1
+            if logging.getLogger().isEnabledFor(logging.INFO):
+              PrintFullInfoAboutObject(blr, incl_acl=False)
+      except AccessDeniedException:
+        sys.stderr.write('You aren\'t authorized to read %s - skipping' %
+                         url_str)
+      except InvalidUrlError:
+        raise
+      except NotFoundException:
+        pass
+      if not arg_matches:
+        sys.stderr.write('No URLs matched %s' % url_str)
+        found_nonmatching_arg = True
+    if found_nonmatching_arg:
+      return 1
     return 0

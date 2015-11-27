@@ -72,8 +72,6 @@ class ParserError(MarkedYAMLError):
 class Parser(object):
     # Since writing a recursive-descendant parser is a straightforward task, we
     # do not give many comments here.
-    # Note that we use Python generators. If you rewrite the parser in another
-    # language, you may replace all 'yield'-s with event handler calls.
 
     DEFAULT_TAGS = {
         u'!':   u'!',
@@ -87,6 +85,11 @@ class Parser(object):
         self.states = []
         self.marks = []
         self.state = self.parse_stream_start
+
+    def dispose(self):
+        # Reset the state attributes (to clear self-references)
+        self.states = []
+        self.state = None
 
     def check_event(self, *choices):
         # Check the type of the next event.

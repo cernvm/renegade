@@ -1,4 +1,4 @@
-# Copyright (C) 2010 Google Inc.
+# Copyright 2014 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,9 +27,12 @@ __all__ = [
 
 
 # Standard library imports
+import StringIO
 import copy
+from email.generator import Generator
 from email.mime.multipart import MIMEMultipart
 from email.mime.nonmultipart import MIMENonMultipart
+import json
 import keyword
 import logging
 import mimetypes
@@ -62,7 +65,7 @@ from apiclient.model import JsonModel
 from apiclient.model import MediaModel
 from apiclient.model import RawModel
 from apiclient.schema import Schemas
-from oauth2client.anyjson import simplejson
+from oauth2client.client import GoogleCredentials
 from oauth2client.util import _add_query_parameter
 from oauth2client.util import positional
 
@@ -146,7 +149,8 @@ def build(serviceName,
           discoveryServiceUrl=DISCOVERY_URI,
           developerKey=None,
           model=None,
-          requestBuilder=HttpRequest):
+          requestBuilder=HttpRequest,
+          credentials=None):
   """Construct a Resource for interacting with an API.
 
   Construct a Resource object for interacting with an API. The serviceName and
@@ -166,6 +170,8 @@ def build(serviceName,
     model: apiclient.Model, converts to and from the wire format.
     requestBuilder: apiclient.http.HttpRequest, encapsulator for an HTTP
       request.
+    credentials: oauth2client.Credentials, credentials to be used for
+      authentication.
 
   Returns:
     A Resource object with methods for interacting with the service.
@@ -187,7 +193,7 @@ def build(serviceName,
   if 'REMOTE_ADDR' in os.environ:
     requested_url = _add_query_parameter(requested_url, 'userIp',
                                          os.environ['REMOTE_ADDR'])
-  logger.info('URL being requested: %s' % requested_url)
+  logger.info('URL being requested: GET %s' % requested_url)
 
   resp, content = http.request(requested_url)
 
@@ -198,13 +204,14 @@ def build(serviceName,
     raise HttpError(resp, content, uri=requested_url)
 
   try:
-    service = simplejson.loads(content)
+    service = json.loads(content)
   except ValueError, e:
     logger.error('Failed to parse as JSON: ' + content)
     raise InvalidJsonError()
 
   return build_from_document(content, base=discoveryServiceUrl, http=http,
-      developerKey=developerKey, model=model, requestBuilder=requestBuilder)
+      developerKey=developerKey, model=model, requestBuilder=requestBuilder,
+      credentials=credentials)
 
 
 @positional(1)
@@ -215,7 +222,8 @@ def build_from_document(
     http=None,
     developerKey=None,
     model=None,
-    requestBuilder=HttpRequest):
+    requestBuilder=HttpRequest,
+    credentials=None):
   """Create a Resource for interacting with an API.
 
   Same as `build()`, but constructs the Resource object from a discovery
@@ -236,6 +244,7 @@ def build_from_document(
     model: Model class instance that serializes and de-serializes requests and
       responses.
     requestBuilder: Takes an http request and packages it up to be executed.
+    credentials: object, credentials to be used for authentication.
 
   Returns:
     A Resource object with methods for interacting with the service.
@@ -245,9 +254,31 @@ def build_from_document(
   future = {}
 
   if isinstance(service, basestring):
-    service = simplejson.loads(service)
+    service = json.loads(service)
   base = urlparse.urljoin(service['rootUrl'], service['servicePath'])
   schema = Schemas(service)
+
+  if credentials:
+    # If credentials were passed in, we could have two cases:
+    # 1. the scopes were specified, in which case the given credentials
+    #    are used for authorizing the http;
+    # 2. the scopes were not provided (meaning the Application Default
+    #    Credentials are to be used). In this case, the Application Default
+    #    Credentials are built and used instead of the original credentials.
+    #    If there are no scopes found (meaning the given service requires no
+    #    authentication), there is no authorization of the http.
+    if (isinstance(credentials, GoogleCredentials) and
+        credentials.create_scoped_required()):
+      scopes = service.get('auth', {}).get('oauth2', {}).get('scopes', {})
+      if scopes:
+        credentials = credentials.create_scoped(scopes.keys())
+      else:
+        # No need to authorize the http object
+        # if the service does not require authentication.
+        credentials = None
+
+    if credentials:
+      http = credentials.authorize(http)
 
   if model is None:
     features = service.get('features', [])
@@ -460,6 +491,23 @@ def _fix_up_method_description(method_desc, root_desc):
   return path_url, http_method, method_id, accept, max_size, media_path_url
 
 
+def _urljoin(base, url):
+  """Custom urljoin replacement supporting : before / in url."""
+  # In general, it's unsafe to simply join base and url. However, for
+  # the case of discovery documents, we know:
+  #  * base will never contain params, query, or fragment
+  #  * url will never contain a scheme or net_loc.
+  # In general, this means we can safely join on /; we just need to
+  # ensure we end up with precisely one / joining base and url. The
+  # exception here is the case of media uploads, where url will be an
+  # absolute url.
+  if url.startswith('http://') or url.startswith('https://'):
+    return urlparse.urljoin(base, url)
+  new_base = base if base.endswith('/') else base + '/'
+  new_url = url[1:] if url.startswith('/') else url
+  return new_base + new_url
+
+
 # TODO(dhermes): Convert this class to ResourceMethod and make it callable
 class ResourceMethodParameters(object):
   """Represents the parameters associated with a method.
@@ -640,7 +688,7 @@ def createMethod(methodName, methodDesc, rootDesc, schema):
         actual_path_params, actual_query_params, body_value)
 
     expanded_url = uritemplate.expand(pathUrl, params)
-    url = urlparse.urljoin(self._baseUrl, expanded_url + query)
+    url = _urljoin(self._baseUrl, expanded_url + query)
 
     resumable = None
     multipart_boundary = ''
@@ -666,7 +714,7 @@ def createMethod(methodName, methodDesc, rootDesc, schema):
 
       # Use the media path uri for media uploads
       expanded_url = uritemplate.expand(mediaPathUrl, params)
-      url = urlparse.urljoin(self._baseUrl, expanded_url + query)
+      url = _urljoin(self._baseUrl, expanded_url + query)
       if media_upload.resumable():
         url = _add_query_parameter(url, 'uploadType', 'resumable')
 
@@ -699,14 +747,19 @@ def createMethod(methodName, methodDesc, rootDesc, schema):
           payload = media_upload.getbytes(0, media_upload.size())
           msg.set_payload(payload)
           msgRoot.attach(msg)
-          body = msgRoot.as_string()
+          # encode the body: note that we can't use `as_string`, because
+          # it plays games with `From ` lines.
+          fp = StringIO.StringIO()
+          g = Generator(fp, mangle_from_=False)
+          g.flatten(msgRoot, unixfrom=False)
+          body = fp.getvalue()
 
           multipart_boundary = msgRoot.get_boundary()
           headers['content-type'] = ('multipart/related; '
                                      'boundary="%s"') % multipart_boundary
           url = _add_query_parameter(url, 'uploadType', 'multipart')
 
-    logger.info('URL being requested: %s' % url)
+    logger.info('URL being requested: %s %s' % (httpMethod,url))
     return self._requestBuilder(self._http,
                                 model.response,
                                 url,
@@ -814,7 +867,7 @@ Returns:
 
     request.uri = uri
 
-    logger.info('URL being requested: %s' % uri)
+    logger.info('URL being requested: %s %s' % (methodName,uri))
 
     return request
 

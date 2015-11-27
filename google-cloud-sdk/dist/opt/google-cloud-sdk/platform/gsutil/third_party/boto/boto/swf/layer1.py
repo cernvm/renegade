@@ -69,7 +69,7 @@ class Layer1(AWSAuthConnection):
 
     def __init__(self, aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=True, port=None, proxy=None, proxy_port=None,
-                 debug=0, session_token=None, region=None):
+                 debug=0, session_token=None, region=None, profile_name=None):
         if not region:
             region_name = boto.config.get('SWF', 'region',
                                           self.DefaultRegionName)
@@ -82,7 +82,7 @@ class Layer1(AWSAuthConnection):
         super(Layer1, self).__init__(self.region.endpoint,
                                    aws_access_key_id, aws_secret_access_key,
                                    is_secure, port, proxy, proxy_port,
-                                   debug, session_token)
+                                   debug, session_token, profile_name=profile_name)
 
     def _required_auth_capability(self):
         return ['hmac-v4']
@@ -96,7 +96,7 @@ class Layer1(AWSAuthConnection):
         :type data: dict
         :param data: Specifies request parameters with default values to be removed.
         """
-        for item in data.keys():
+        for item in list(data.keys()):
             if isinstance(data[item], dict):
                 cls._normalize_request_dict(data[item])
             if data[item] in (None, {}):
@@ -130,7 +130,7 @@ class Layer1(AWSAuthConnection):
                                                     {}, headers, body, None)
         response = self._mexe(http_request, sender=None,
                               override_num_retries=10)
-        response_body = response.read()
+        response_body = response.read().decode('utf-8')
         boto.log.debug(response_body)
         if response.status == 200:
             if response_body:

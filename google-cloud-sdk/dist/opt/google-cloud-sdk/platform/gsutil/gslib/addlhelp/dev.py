@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2012 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Additional help about contributing code to gsutil."""
 
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
+from __future__ import absolute_import
+
 from gslib.help_provider import HelpProvider
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 
-_detailed_help_text = ("""
+_DETAILED_HELP_TEXT = ("""
 <B>OVERVIEW</B>
   We're open to incorporating gsutil code changes authored by users. Here
   are some guidelines:
@@ -32,10 +30,10 @@ _detailed_help_text = ("""
      - If you are an individual writing original source code and you're
        sure you own the intellectual property,
        then you'll need to sign an individual CLA
-       (http://code.google.com/legal/individual-cla-v1.0.html).
+       (https://cla.developers.google.com/about/google-individual).
      - If you work for a company that wants to allow you to contribute your
        work to gsutil, then you'll need to sign a corporate CLA
-       (http://code.google.com/legal/corporate-cla-v1.0.html)
+       (https://cla.developers.google.com/about/google-corporate)
 
      Follow either of the two links above to access the appropriate CLA and
      instructions for how to sign and return it. Once we receive it, we'll
@@ -124,7 +122,7 @@ _detailed_help_text = ("""
       - Check out the gsutil code from your fork of the gsutil repository and
         apply your changes.
       - Download the "upload.py" script from
-        http://code.google.com/p/rietveld/wiki/UploadPyUsage
+        https://github.com/rietveld-codereview/rietveld
       - Run upload.py from your git directory with the changes.
       - Click the codereview.appspot.com link it generates, click "Edit Issue",
         and add mfschwartz@google.com as a reviewer, and Cc gs-team@google.com.
@@ -134,20 +132,17 @@ _detailed_help_text = ("""
 """)
 
 
-
 class CommandOptions(HelpProvider):
   """Additional help about contributing code to gsutil."""
+  # TODO: gsutil-beta: Add lint .rc file and linting instructions.
 
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'dev',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['development', 'developer', 'code', 'mods',
-                         'software'],
-    # Type of help:
-    HELP_TYPE : HelpType.ADDITIONAL_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Contributing Code to gsutil',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Help specification. See help_provider.py for documentation.
+  help_spec = HelpProvider.HelpSpec(
+      help_name='dev',
+      help_name_aliases=[
+          'development', 'developer', 'code', 'mods', 'software'],
+      help_type='additional_help',
+      help_one_line_summary='Contributing Code to gsutil',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )

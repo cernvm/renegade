@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2011 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,100 +12,132 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Implementation of rb command for deleting cloud storage buckets."""
 
-from boto.exception import GSResponseError
+from __future__ import absolute_import
+
+from gslib.cloud_api import NotEmptyException
 from gslib.command import Command
-from gslib.command import COMMAND_NAME
-from gslib.command import COMMAND_NAME_ALIASES
-from gslib.command import FILE_URIS_OK
-from gslib.command import MAX_ARGS
-from gslib.command import MIN_ARGS
-from gslib.command import PROVIDER_URIS_OK
-from gslib.command import SUPPORTED_SUB_ARGS
-from gslib.command import URIS_START_ARG
+from gslib.command_argument import CommandArgument
+from gslib.cs_api_map import ApiSelector
 from gslib.exception import CommandException
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
+from gslib.storage_url import StorageUrlFromString
 from gslib.util import NO_MAX
 
-_detailed_help_text = ("""
+
+_SYNOPSIS = """
+  gsutil rb [-f] url...
+"""
+
+_DETAILED_HELP_TEXT = ("""
 <B>SYNOPSIS</B>
-  gsutil rb uri...
+""" + _SYNOPSIS + """
+
 
 <B>DESCRIPTION</B>
-  The rb command deletes new bucket. Buckets must be empty before you can delete
+  The rb command deletes a bucket. Buckets must be empty before you can delete
   them.
 
   Be certain you want to delete a bucket before you do so, as once it is
   deleted the name becomes available and another user may create a bucket with
   that name. (But see also "DOMAIN NAMED BUCKETS" under "gsutil help naming"
   for help carving out parts of the bucket name space.)
+
+
+<B>OPTIONS</B>
+  -f          Continues silently (without printing error messages) despite
+              errors when removing buckets. If some buckets couldn't be removed,
+              gsutil's exit status will be non-zero even if this flag is set.
 """)
 
 
 class RbCommand(Command):
   """Implementation of gsutil rb command."""
 
-  # Command specification (processed by parent class).
-  command_spec = {
-    # Name of command.
-    COMMAND_NAME : 'rb',
-    # List of command name aliases.
-    COMMAND_NAME_ALIASES : [
-        'deletebucket', 'removebucket', 'removebuckets', 'rmdir'],
-    # Min number of args required by this command.
-    MIN_ARGS : 1,
-    # Max number of args required by this command, or NO_MAX.
-    MAX_ARGS : NO_MAX,
-    # Getopt-style string specifying acceptable sub args.
-    SUPPORTED_SUB_ARGS : '',
-    # True if file URIs acceptable for this command.
-    FILE_URIS_OK : False,
-    # True if provider-only URIs acceptable for this command.
-    PROVIDER_URIS_OK : False,
-    # Index in args of first URI arg.
-    URIS_START_ARG : 0,
-  }
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'rb',
-    # List of help name aliases.
-    HELP_NAME_ALIASES :
-        ['deletebucket', 'removebucket', 'removebuckets', 'rmdir'],
-    # Type of help:
-    HELP_TYPE : HelpType.COMMAND_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Remove buckets',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Command specification. See base class for documentation.
+  command_spec = Command.CreateCommandSpec(
+      'rb',
+      command_name_aliases=[
+          'deletebucket', 'removebucket', 'removebuckets', 'rmdir'],
+      usage_synopsis=_SYNOPSIS,
+      min_args=1,
+      max_args=NO_MAX,
+      supported_sub_args='f',
+      file_url_ok=False,
+      provider_url_ok=False,
+      urls_start_arg=0,
+      gs_api_support=[ApiSelector.XML, ApiSelector.JSON],
+      gs_default_api=ApiSelector.JSON,
+      argparse_arguments=[
+          CommandArgument.MakeZeroOrMoreCloudBucketURLsArgument()
+      ]
+  )
+  # Help specification. See help_provider.py for documentation.
+  help_spec = Command.HelpSpec(
+      help_name='rb',
+      help_name_aliases=[
+          'deletebucket', 'removebucket', 'removebuckets', 'rmdir'],
+      help_type='command_help',
+      help_one_line_summary='Remove buckets',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )
 
-  # Command entry point.
   def RunCommand(self):
-    # Expand bucket name wildcards, if any.
+    """Command entry point for the rb command."""
+    self.continue_on_error = False
+    if self.sub_opts:
+      for o, unused_a in self.sub_opts:
+        if o == '-f':
+          self.continue_on_error = True
+
     did_some_work = False
-    for uri_str in self.args:
-      for uri in self.WildcardIterator(uri_str).IterUris():
-        if uri.object_name:
-          raise CommandException('"rb" command requires a URI with no object '
-                                 'name')
-        self.logger.info('Removing %s...', uri)
+    some_failed = False
+    for url_str in self.args:
+      wildcard_url = StorageUrlFromString(url_str)
+      if wildcard_url.IsObject():
+        raise CommandException('"rb" command requires a provider or '
+                               'bucket URL')
+      # Wrap WildcardIterator call in try/except so we can avoid printing errors
+      # with -f option if a non-existent URL listed, permission denial happens
+      # while listing, etc.
+      try:
+        # Materialize iterator results into a list to catch exceptions.
+        # Since this is listing buckets this list shouldn't be too large to fit
+        # in memory at once.
+        # Also, avoid listing all fields to avoid performing unnecessary bucket
+        # metadata GETs. These would also be problematic when billing is
+        # disabled, as deletes are allowed but GetBucket is not.
+        blrs = list(
+            self.WildcardIterator(url_str).IterBuckets(bucket_fields=['id']))
+      except:  # pylint: disable=bare-except
+        some_failed = True
+        if self.continue_on_error:
+          continue
+        else:
+          raise
+      for blr in blrs:
+        url = blr.storage_url
+        self.logger.info('Removing %s...', url)
         try:
-          uri.delete_bucket(self.headers)
-        except GSResponseError as e:
-          if e.code == 'BucketNotEmpty' and uri.get_versioning_config():
+          self.gsutil_api.DeleteBucket(url.bucket_name, provider=url.scheme)
+        except NotEmptyException as e:
+          some_failed = True
+          if self.continue_on_error:
+            continue
+          elif 'VersionedBucketNotEmpty' in e.reason:
             raise CommandException('Bucket is not empty. Note: this is a '
-                                   'versioned bucket, so to delete all objects'
-                                   '\nyou need to use:\n\tgsutil rm -ra %s'
-                                   % uri)
+                                   'versioned bucket, so to delete all '
+                                   'objects\nyou need to use:'
+                                   '\n\tgsutil rm -r %s' % url)
           else:
+            raise
+        except:  # pylint: disable=bare-except
+          some_failed = True
+          if not self.continue_on_error:
             raise
         did_some_work = True
     if not did_some_work:
-      raise CommandException('No URIs matched')
-    return 0
+      raise CommandException('No URLs matched')
+    return 1 if some_failed else 0
 

@@ -8,21 +8,35 @@ from nodes import *
 from loader import *
 from dumper import *
 
+__version__ = '3.11'
+
+try:
+    from cyaml import *
+    __with_libyaml__ = True
+except ImportError:
+    __with_libyaml__ = False
+
 def scan(stream, Loader=Loader):
     """
     Scan a YAML stream and produce scanning tokens.
     """
     loader = Loader(stream)
-    while loader.check_token():
-        yield loader.get_token()
+    try:
+        while loader.check_token():
+            yield loader.get_token()
+    finally:
+        loader.dispose()
 
 def parse(stream, Loader=Loader):
     """
     Parse a YAML stream and produce parsing events.
     """
     loader = Loader(stream)
-    while loader.check_event():
-        yield loader.get_event()
+    try:
+        while loader.check_event():
+            yield loader.get_event()
+    finally:
+        loader.dispose()
 
 def compose(stream, Loader=Loader):
     """
@@ -30,26 +44,22 @@ def compose(stream, Loader=Loader):
     and produce the corresponding representation tree.
     """
     loader = Loader(stream)
-    if loader.check_node():
-        return loader.get_node()
+    try:
+        return loader.get_single_node()
+    finally:
+        loader.dispose()
 
 def compose_all(stream, Loader=Loader):
     """
     Parse all YAML documents in a stream
-    and produce corresponsing representation trees.
+    and produce corresponding representation trees.
     """
     loader = Loader(stream)
-    while loader.check_node():
-        yield loader.get_node()
-
-def load_all(stream, Loader=Loader):
-    """
-    Parse all YAML documents in a stream
-    and produce corresponding Python objects.
-    """
-    loader = Loader(stream)
-    while loader.check_data():
-        yield loader.get_data()
+    try:
+        while loader.check_node():
+            yield loader.get_node()
+    finally:
+        loader.dispose()
 
 def load(stream, Loader=Loader):
     """
@@ -57,16 +67,22 @@ def load(stream, Loader=Loader):
     and produce the corresponding Python object.
     """
     loader = Loader(stream)
-    if loader.check_data():
-        return loader.get_data()
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
 
-def safe_load_all(stream):
+def load_all(stream, Loader=Loader):
     """
     Parse all YAML documents in a stream
     and produce corresponding Python objects.
-    Resolve only basic YAML tags.
     """
-    return load_all(stream, SafeLoader)
+    loader = Loader(stream)
+    try:
+        while loader.check_data():
+            yield loader.get_data()
+    finally:
+        loader.dispose()
 
 def safe_load(stream):
     """
@@ -75,6 +91,14 @@ def safe_load(stream):
     Resolve only basic YAML tags.
     """
     return load(stream, SafeLoader)
+
+def safe_load_all(stream):
+    """
+    Parse all YAML documents in a stream
+    and produce corresponding Python objects.
+    Resolve only basic YAML tags.
+    """
+    return load_all(stream, SafeLoader)
 
 def emit(events, stream=None, Dumper=Dumper,
         canonical=None, indent=None, width=None,
@@ -85,16 +109,16 @@ def emit(events, stream=None, Dumper=Dumper,
     """
     getvalue = None
     if stream is None:
-        try:
-            from cStringIO import StringIO
-        except ImportError:
-            from StringIO import StringIO
+        from StringIO import StringIO
         stream = StringIO()
         getvalue = stream.getvalue
     dumper = Dumper(stream, canonical=canonical, indent=indent, width=width,
             allow_unicode=allow_unicode, line_break=line_break)
-    for event in events:
-        dumper.emit(event)
+    try:
+        for event in events:
+            dumper.emit(event)
+    finally:
+        dumper.dispose()
     if getvalue:
         return getvalue()
 
@@ -109,20 +133,23 @@ def serialize_all(nodes, stream=None, Dumper=Dumper,
     """
     getvalue = None
     if stream is None:
-        try:
-            from cStringIO import StringIO
-        except ImportError:
+        if encoding is None:
             from StringIO import StringIO
+        else:
+            from cStringIO import StringIO
         stream = StringIO()
         getvalue = stream.getvalue
     dumper = Dumper(stream, canonical=canonical, indent=indent, width=width,
             allow_unicode=allow_unicode, line_break=line_break,
             encoding=encoding, version=version, tags=tags,
             explicit_start=explicit_start, explicit_end=explicit_end)
-    dumper.open()
-    for node in nodes:
-        dumper.serialize(node)
-    dumper.close()
+    try:
+        dumper.open()
+        for node in nodes:
+            dumper.serialize(node)
+        dumper.close()
+    finally:
+        dumper.dispose()
     if getvalue:
         return getvalue()
 
@@ -145,10 +172,10 @@ def dump_all(documents, stream=None, Dumper=Dumper,
     """
     getvalue = None
     if stream is None:
-        try:
-            from cStringIO import StringIO
-        except ImportError:
+        if encoding is None:
             from StringIO import StringIO
+        else:
+            from cStringIO import StringIO
         stream = StringIO()
         getvalue = stream.getvalue
     dumper = Dumper(stream, default_style=default_style,
@@ -157,10 +184,13 @@ def dump_all(documents, stream=None, Dumper=Dumper,
             allow_unicode=allow_unicode, line_break=line_break,
             encoding=encoding, version=version, tags=tags,
             explicit_start=explicit_start, explicit_end=explicit_end)
-    dumper.open()
-    for data in documents:
-        dumper.represent(data)
-    dumper.close()
+    try:
+        dumper.open()
+        for data in documents:
+            dumper.represent(data)
+        dumper.close()
+    finally:
+        dumper.dispose()
     if getvalue:
         return getvalue()
 
@@ -282,3 +312,4 @@ class YAMLObject(object):
         return dumper.represent_yaml_object(cls.yaml_tag, data, cls,
                 flow_style=cls.yaml_flow_style)
     to_yaml = classmethod(to_yaml)
+

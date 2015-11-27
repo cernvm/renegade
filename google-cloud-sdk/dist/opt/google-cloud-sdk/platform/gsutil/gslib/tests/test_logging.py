@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,46 +12,54 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Integration tests for logging command."""
+
+from __future__ import absolute_import
 
 import gslib.tests.testcase as testcase
-
+from gslib.tests.testcase.integration_testcase import SkipForS3
 from gslib.tests.util import ObjectToURI as suri
 
+
+@SkipForS3('Logging command requires S3 ACL configuration on target bucket.')
 class TestLogging(testcase.GsUtilIntegrationTestCase):
-  
-  _enable_cmd_prefix = ['logging', 'set', 'on']
-  _disable_cmd_prefix = ['logging', 'set', 'off']
-  _get_cmd_prefix = ['logging', 'get']
+  """Integration tests for logging command."""
+
+  _enable_log_cmd = ['logging', 'set', 'on']
+  _disable_log_cmd = ['logging', 'set', 'off']
+  _get_log_cmd = ['logging', 'get']
 
   def testLogging(self):
+    """Tests enabling and disabling logging."""
     bucket_uri = self.CreateBucket()
     bucket_suri = suri(bucket_uri)
     stderr = self.RunGsUtil(
-        self._enable_cmd_prefix + ['-b', bucket_suri, bucket_suri],
+        self._enable_log_cmd + ['-b', bucket_suri, bucket_suri],
         return_stderr=True)
     self.assertIn('Enabling logging', stderr)
 
-    stdout = self.RunGsUtil(self._get_cmd_prefix + [bucket_suri],
+    stdout = self.RunGsUtil(self._get_log_cmd + [bucket_suri],
                             return_stdout=True)
-    self.assertIn('LogObjectPrefix', stdout)
+    self.assertIn('LogObjectPrefix'.lower(), stdout.lower())
 
-    stderr = self.RunGsUtil(self._disable_cmd_prefix + [bucket_suri],
+    stderr = self.RunGsUtil(self._disable_log_cmd + [bucket_suri],
                             return_stderr=True)
     self.assertIn('Disabling logging', stderr)
 
   def testTooFewArgumentsFails(self):
+    """Ensures logging commands fail with too few arguments."""
     # No arguments for enable, but valid subcommand.
-    stderr = self.RunGsUtil(self._enable_cmd_prefix, return_stderr=True,
+    stderr = self.RunGsUtil(self._enable_log_cmd, return_stderr=True,
                             expected_status=1)
     self.assertIn('command requires at least', stderr)
 
     # No arguments for disable, but valid subcommand.
-    stderr = self.RunGsUtil(self._disable_cmd_prefix, return_stderr=True,
+    stderr = self.RunGsUtil(self._disable_log_cmd, return_stderr=True,
                             expected_status=1)
     self.assertIn('command requires at least', stderr)
-    
+
     # No arguments for get, but valid subcommand.
-    stderr = self.RunGsUtil(self._get_cmd_prefix, return_stderr=True,
+    stderr = self.RunGsUtil(self._get_log_cmd, return_stderr=True,
                             expected_status=1)
     self.assertIn('command requires at least', stderr)
 
@@ -58,7 +67,8 @@ class TestLogging(testcase.GsUtilIntegrationTestCase):
     stderr = self.RunGsUtil(['logging'], return_stderr=True, expected_status=1)
     self.assertIn('command requires at least', stderr)
 
+
 class TestLoggingOldAlias(TestLogging):
-  _enable_cmd_prefix = ['enablelogging']
-  _disable_cmd_prefix = ['disablelogging']
-  _get_cmd_prefix = ['getlogging']
+  _enable_log_cmd = ['enablelogging']
+  _disable_log_cmd = ['disablelogging']
+  _get_log_cmd = ['getlogging']

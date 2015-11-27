@@ -23,26 +23,15 @@
 This module provides an interface to the Elastic Compute Cloud (EC2)
 CloudWatch service from AWS.
 """
-from boto.compat import json
+from boto.compat import json, map, six, zip
 from boto.connection import AWSQueryConnection
 from boto.ec2.cloudwatch.metric import Metric
 from boto.ec2.cloudwatch.alarm import MetricAlarm, MetricAlarms, AlarmHistoryItem
 from boto.ec2.cloudwatch.datapoint import Datapoint
-from boto.regioninfo import RegionInfo
+from boto.regioninfo import RegionInfo, get_regions, load_regions
 import boto
 
-RegionData = {
-    'us-east-1': 'monitoring.us-east-1.amazonaws.com',
-    'us-gov-west-1': 'monitoring.us-gov-west-1.amazonaws.com',
-    'us-west-1': 'monitoring.us-west-1.amazonaws.com',
-    'us-west-2': 'monitoring.us-west-2.amazonaws.com',
-    'sa-east-1': 'monitoring.sa-east-1.amazonaws.com',
-    'eu-west-1': 'monitoring.eu-west-1.amazonaws.com',
-    'ap-northeast-1': 'monitoring.ap-northeast-1.amazonaws.com',
-    'ap-southeast-1': 'monitoring.ap-southeast-1.amazonaws.com',
-    'ap-southeast-2': 'monitoring.ap-southeast-2.amazonaws.com',
-    'cn-north-1': 'monitoring.cn-north-1.amazonaws.com.cn',
-}
+RegionData = load_regions().get('cloudwatch', {})
 
 
 def regions():
@@ -52,13 +41,7 @@ def regions():
     :rtype: list
     :return: A list of :class:`boto.RegionInfo` instances
     """
-    regions = []
-    for region_name in RegionData:
-        region = RegionInfo(name=region_name,
-                            endpoint=RegionData[region_name],
-                            connection_cls=CloudWatchConnection)
-        regions.append(region)
-    return regions
+    return get_regions('cloudwatch', connection_cls=CloudWatchConnection)
 
 
 def connect_to_region(region_name, **kw_params):
@@ -91,7 +74,7 @@ class CloudWatchConnection(AWSQueryConnection):
                  is_secure=True, port=None, proxy=None, proxy_port=None,
                  proxy_user=None, proxy_pass=None, debug=0,
                  https_connection_factory=None, region=None, path='/',
-                 security_token=None, validate_certs=True):
+                 security_token=None, validate_certs=True, profile_name=None):
         """
         Init method to create a new connection to EC2 Monitoring Service.
 
@@ -109,13 +92,14 @@ class CloudWatchConnection(AWSQueryConnection):
             validate_certs = False
 
         super(CloudWatchConnection, self).__init__(aws_access_key_id,
-                                    aws_secret_access_key,
-                                    is_secure, port, proxy, proxy_port,
-                                    proxy_user, proxy_pass,
-                                    self.region.endpoint, debug,
-                                    https_connection_factory, path,
-                                    security_token,
-                                    validate_certs=validate_certs)
+                                                   aws_secret_access_key,
+                                                   is_secure, port, proxy, proxy_port,
+                                                   proxy_user, proxy_pass,
+                                                   self.region.endpoint, debug,
+                                                   https_connection_factory, path,
+                                                   security_token,
+                                                   validate_certs=validate_certs,
+                                                   profile_name=profile_name)
 
     def _required_auth_capability(self):
         return ['hmac-v4']
@@ -126,23 +110,23 @@ class CloudWatchConnection(AWSQueryConnection):
         for dim_name in dimension:
             dim_value = dimension[dim_name]
             if dim_value:
-                if isinstance(dim_value, basestring):
+                if isinstance(dim_value, six.string_types):
                     dim_value = [dim_value]
                 for value in dim_value:
-                    params['%s.%d.Name' % (prefix, i+1)] = dim_name
-                    params['%s.%d.Value' % (prefix, i+1)] = value
+                    params['%s.%d.Name' % (prefix, i + 1)] = dim_name
+                    params['%s.%d.Value' % (prefix, i + 1)] = value
                     i += 1
             else:
-                params['%s.%d.Name' % (prefix, i+1)] = dim_name
+                params['%s.%d.Name' % (prefix, i + 1)] = dim_name
                 i += 1
 
     def build_list_params(self, params, items, label):
-        if isinstance(items, basestring):
+        if isinstance(items, six.string_types):
             items = [items]
         for index, item in enumerate(items):
             i = index + 1
             if isinstance(item, dict):
-                for k, v in item.iteritems():
+                for k, v in six.iteritems(item):
                     params[label % (i, 'Name')] = k
                     if v is not None:
                         params[label % (i, 'Value')] = v
@@ -150,7 +134,7 @@ class CloudWatchConnection(AWSQueryConnection):
                 params[label % i] = item
 
     def build_put_params(self, params, name, value=None, timestamp=None,
-                        unit=None, dimensions=None, statistics=None):
+                         unit=None, dimensions=None, statistics=None):
         args = (name, value, unit, dimensions, statistics, timestamp)
         length = max(map(lambda a: len(a) if isinstance(a, list) else 1, args))
 
@@ -187,7 +171,7 @@ class CloudWatchConnection(AWSQueryConnection):
             else:
                 raise Exception('Must specify a value or statistics to put.')
 
-            for key, val in metric_data.iteritems():
+            for key, val in six.iteritems(metric_data):
                 params['MetricData.member.%d.%s' % (index + 1, key)] = val
 
     def get_metric_statistics(self, period, start_time, end_time, metric_name,
@@ -345,7 +329,7 @@ class CloudWatchConnection(AWSQueryConnection):
         """
         params = {'Namespace': namespace}
         self.build_put_params(params, name, value=value, timestamp=timestamp,
-            unit=unit, dimensions=dimensions, statistics=statistics)
+                              unit=unit, dimensions=dimensions, statistics=statistics)
 
         return self.get_status('PutMetricData', params, verb="POST")
 
@@ -514,15 +498,15 @@ class CloudWatchConnection(AWSQueryConnection):
         :param alarm: MetricAlarm object.
         """
         params = {
-                    'AlarmName': alarm.name,
-                    'MetricName': alarm.metric,
-                    'Namespace': alarm.namespace,
-                    'Statistic': alarm.statistic,
-                    'ComparisonOperator': alarm.comparison,
-                    'Threshold': alarm.threshold,
-                    'EvaluationPeriods': alarm.evaluation_periods,
-                    'Period': alarm.period,
-                 }
+            'AlarmName': alarm.name,
+            'MetricName': alarm.metric,
+            'Namespace': alarm.namespace,
+            'Statistic': alarm.statistic,
+            'ComparisonOperator': alarm.comparison,
+            'Threshold': alarm.threshold,
+            'EvaluationPeriods': alarm.evaluation_periods,
+            'Period': alarm.period,
+        }
         if alarm.actions_enabled is not None:
             params['ActionsEnabled'] = alarm.actions_enabled
         if alarm.alarm_actions:

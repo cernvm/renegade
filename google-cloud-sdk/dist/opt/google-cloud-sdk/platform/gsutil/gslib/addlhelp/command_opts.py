@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2012 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Additional help about gsutil command-level options."""
 
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
+from __future__ import absolute_import
+
 from gslib.help_provider import HelpProvider
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 
-_detailed_help_text = ("""
+_DETAILED_HELP_TEXT = ("""
 <B>SYNOPSIS</B>
   Top-level gsutil Options
 
@@ -38,15 +36,13 @@ _detailed_help_text = ("""
 
 
 <B>OPTIONS</B>
-  -d          Shows HTTP requests/headers.
-
-  -D          Shows HTTP requests/headers plus additional debug info needed when
+  -D          Shows HTTP requests/headers and additional debug info needed when
               posting support requests.
 
-  -DD         Shows HTTP requests/headers plus additional debug info plus HTTP
+  -DD         Shows HTTP requests/headers, additional debug info plus HTTP
               upstream payload.
 
-  -h          Allows you to specify additional HTTP headers, for example:
+  -h          Allows you to specify certain HTTP headers, for example:
 
                 gsutil -h "Cache-Control:public,max-age=3600" \\
                        -h "Content-Type:text/html" cp ...
@@ -56,30 +52,33 @@ _detailed_help_text = ("""
               filename=filename.ext"), to avoid having the shell split them
               into separate arguments.
 
-              Note that because the -h option allows you to specify any HTTP
-              header, it is both powerful and potentially dangerous:
+              The following headers are supported:
+              Cache-Control
+              Content-Disposition
+              Content-Encoding
+              Content-Language
+              Content-MD5
+              Content-Type
+              Custom metadata headers with a matching Cloud Storage Provider
+              prefix, such as:
 
-              - It is powerful because it allows you to specify headers that
-                gsutil doesn't currently know about (e.g., to request
-                service features from a different storage service provider
-                than Google); or to override the values gsutil would normally
-                send with different values.
-              - It is potentially dangerous because you can specify headers
-                that cause gsutil to send invalid requests, or that in
-                other ways change the behavior of requests.
+                x-goog-meta-
 
-              Thus, you should be sure you understand the underlying storage
-              service HTTP API (and what impact the headers you specify will
-              have) before using the gsutil -h option.
+              Note that for gs:// URLs, the Cache Control header is specific to
+              the API being used. The XML API will accept any cache control
+              headers and return them during object downloads.  The JSON API
+              respects only the public, private, no-cache, and max-age cache
+              control headers, and may add its own no-transform directive even
+              if it was not specified. See 'gsutil help apis' for more
+              information on gsutil's interaction with APIs.
 
               See also "gsutil help setmeta" for the ability to set metadata
               fields on objects after they have been uploaded.
 
-  -m          Causes supported operations (acl ch, acl set, cp, mv, rm,
+  -m          Causes supported operations (acl ch, acl set, cp, mv, rm, rsync,
               and setmeta) to run in parallel. This can significantly improve
-              performance if you are uploading, downloading, moving, removing,
-              or changing ACLs on a large number of files over a fast network
-              connection.
+              performance if you are performing operations on a large number of
+              files over a reasonably fast network connection.
 
               gsutil performs the specified operation using a combination of
               multi-threading and multi-processing, using a number of threads
@@ -91,50 +90,44 @@ _detailed_help_text = ("""
 
               Using the -m option may make your performance worse if you
               are using a slower network, such as the typical network speeds
-              offered by non-business home network plans.
+              offered by non-business home network plans. It can also make
+              your performance worse for cases that perform all operations
+              locally (e.g., gsutil rsync, where both source and desination URLs
+              are on the local disk), because it can "thrash" your local disk.
 
               If a download or upload operation using parallel transfer fails
               before the entire transfer is complete (e.g. failing after 300 of
               1000 files have been transferred), you will need to restart the
               entire transfer.
-              
+
               Also, although most commands will normally fail upon encountering
               an error when the -m flag is disabled, all commands will
               continue to try all operations when -m is enabled with multiple
               threads or processes, and the number of failed operations (if any)
               will be reported at the end of the command's execution.
 
-              WARNING: If you use the gsutil -m option when copying data
-              between versioned buckets, object version ordering will not be
-              preserved. For more information see the
-              "COPYING VERSIONED BUCKETS" section under
-              'gsutil help versions'.
-
   -o          Set/override values in the boto configuration value, in the format
               <section>:<name>=<value>, e.g. gsutil -o "Boto:proxy=host" ...
+              This will not pass the option to gsutil integration tests, which
+              run in a separate process.
 
   -q          Causes gsutil to perform operations quietly, i.e., without
               reporting progress indicators of files being copied or removed,
               etc. Errors are still reported. This option can be useful for
               running gsutil from a cron job that logs its output to a file, for
               which the only information desired in the log is failures.
-
-  -s          Tells gsutil to use a simulated storage provider (for testing).
 """)
 
 
 class CommandOptions(HelpProvider):
   """Additional help about gsutil command-level options."""
 
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'options',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['arg', 'args', 'cli', 'opt', 'opts'],
-    # Type of help:
-    HELP_TYPE : HelpType.ADDITIONAL_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Top-Level Command-Line Options',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Help specification. See help_provider.py for documentation.
+  help_spec = HelpProvider.HelpSpec(
+      help_name='options',
+      help_name_aliases=['arg', 'args', 'cli', 'opt', 'opts'],
+      help_type='additional_help',
+      help_one_line_summary='Top-Level Command-Line Options',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )

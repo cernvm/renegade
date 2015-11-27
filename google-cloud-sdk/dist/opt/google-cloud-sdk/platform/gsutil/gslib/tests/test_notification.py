@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,6 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Integration tests for notification command."""
+
+from __future__ import absolute_import
 
 import re
 import uuid
@@ -34,6 +38,7 @@ class TestNotification(testcase.GsUtilIntegrationTestCase):
   @unittest.skipUnless(NOTIFICATION_URL,
                        'Test requires notification URL configuration.')
   def test_watch_bucket(self):
+    """Tests creating a notification channel on a bucket."""
     bucket_uri = self.CreateBucket()
     self.RunGsUtil([
         'notification', 'watchbucket', NOTIFICATION_URL, suri(bucket_uri)])
@@ -49,6 +54,7 @@ class TestNotification(testcase.GsUtilIntegrationTestCase):
   @unittest.skipUnless(NOTIFICATION_URL,
                        'Test requires notification URL configuration.')
   def test_stop_channel(self):
+    """Tests stopping a notification channel on a bucket."""
     bucket_uri = self.CreateBucket()
     stderr = self.RunGsUtil(
         ['notification', 'watchbucket', NOTIFICATION_URL, suri(bucket_uri)],

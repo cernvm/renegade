@@ -22,7 +22,7 @@
 import uuid
 import base64
 import time
-from boto.compat import json
+from boto.compat import six, json
 from boto.cloudfront.identity import OriginAccessIdentity
 from boto.cloudfront.object import Object, StreamingObject
 from boto.cloudfront.signers import ActiveTrustedSigners, TrustedSigners
@@ -102,6 +102,9 @@ class DistributionConfig(object):
         self.trusted_signers = trusted_signers
         self.logging = logging
         self.default_root_object = default_root_object
+
+    def __repr__(self):
+        return "DistributionConfig:%s" % self.origin
 
     def to_xml(self):
         s = '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -234,6 +237,9 @@ class DistributionSummary(object):
         self.etag = None
         self.streaming = False
 
+    def __repr__(self):
+        return "DistributionSummary:%s" % self.domain_name
+
     def startElement(self, name, attrs, connection):
         if name == 'TrustedSigners':
             self.trusted_signers = TrustedSigners()
@@ -294,6 +300,9 @@ class Distribution(object):
         self.etag = None
         self._bucket = None
         self._object_class = Object
+
+    def __repr__(self):
+        return "Distribution:%s" % self.domain_name
 
     def startElement(self, name, attrs, connection):
         if name == 'DistributionConfig':
@@ -656,7 +665,7 @@ class Distribution(object):
             raise ValueError("You must specify one of private_key_file or private_key_string")
         # If private_key_file is a file name, open it and read it
         if private_key_string is None:
-            if isinstance(private_key_file, basestring):
+            if isinstance(private_key_file, six.string_types):
                 with open(private_key_file, 'r') as file_handle:
                     private_key_string = file_handle.read()
             # Otherwise, treat it like a file

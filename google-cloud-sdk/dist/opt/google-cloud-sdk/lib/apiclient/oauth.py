@@ -27,7 +27,6 @@ import oauth2 as oauth
 import urllib
 import urlparse
 
-from oauth2client.anyjson import simplejson
 from oauth2client.client import Credentials
 from oauth2client.client import Flow
 from oauth2client.client import Storage

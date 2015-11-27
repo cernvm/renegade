@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,17 +14,18 @@
 # limitations under the License.
 """Contains helper objects for changing and deleting ACLs."""
 
-import re
-from xml.dom import minidom
+from __future__ import absolute_import
 
-from boto.gs import acl
+import re
 
 from gslib.exception import CommandException
+from gslib.third_party.storage_apitools import storage_v1_messages as apitools_messages
 
 
 class ChangeType(object):
   USER = 'User'
   GROUP = 'Group'
+  PROJECT = 'Project'
 
 
 class AclChange(object):
@@ -32,12 +34,28 @@ class AclChange(object):
   id_scopes = ['UserById', 'GroupById']
   email_scopes = ['UserByEmail', 'GroupByEmail']
   domain_scopes = ['GroupByDomain']
-  scope_types = public_scopes + id_scopes + email_scopes + domain_scopes
+  project_scopes = ['Project']
+  scope_types = (public_scopes + id_scopes + email_scopes + domain_scopes
+                 + project_scopes)
+
+  public_entity_all_users = 'allUsers'
+  public_entity_all_auth_users = 'allAuthenticatedUsers'
+  public_entity_types = (public_entity_all_users, public_entity_all_auth_users)
+  project_entity_prefixes = ('project-editors-', 'project-owners-',
+                             'project-viewers-')
+  group_entity_prefix = 'group-'
+  user_entity_prefix = 'user-'
+  domain_entity_prefix = 'domain-'
+  project_entity_prefix = 'project-'
 
   permission_shorthand_mapping = {
-      'R': 'READ',
-      'W': 'WRITE',
-      'FC': 'FULL_CONTROL',
+      'R': 'READER',
+      'W': 'WRITER',
+      'FC': 'OWNER',
+      'O': 'OWNER',
+      'READ': 'READER',
+      'WRITE': 'WRITER',
+      'FULL_CONTROL': 'OWNER'
       }
 
   def __init__(self, acl_change_descriptor, scope_type):
@@ -46,8 +64,8 @@ class AclChange(object):
     Args:
       acl_change_descriptor: An acl change as described in the "ch" section of
                              the "acl" command's help.
-      scope_type: Either ChangeType.USER or ChangeType.GROUP, specifying the
-                  extent of the scope.
+      scope_type: Either ChangeType.USER or ChangeType.GROUP or
+                  ChangeType.PROJECT, specifying the extent of the scope.
     """
     self.identifier = ''
 
@@ -69,6 +87,7 @@ class AclChange(object):
           'Email': r'^.+@.+\..+$',
           'Id': r'^[0-9A-Fa-f]{64}$',
           'Domain': r'^[^@]+\.[^@]+$',
+          'Project': r'(owners|editors|viewers)\-.+$',
           }
       for type_string, regex in re_map.items():
         if re.match(regex, text, re.IGNORECASE):
@@ -92,13 +111,16 @@ class AclChange(object):
       # which is good because then validate can complain.
       self.scope_type = '{0}ByDomain'.format(scope_type)
       self.identifier = scope_string
-    elif scope_class in ['Email', 'Id']:
+    elif scope_class in ('Email', 'Id'):
       self.scope_type = '{0}By{1}'.format(scope_type, scope_class)
       self.identifier = scope_string
     elif scope_class == 'AllAuthenticatedUsers':
       self.scope_type = 'AllAuthenticatedUsers'
     elif scope_class == 'AllUsers':
       self.scope_type = 'AllUsers'
+    elif scope_class == 'Project':
+      self.scope_type = 'Project'
+      self.identifier = scope_string
     else:
       # This is just a fallback, so we set it to something
       # and the validate step has something to go on.
@@ -134,81 +156,114 @@ class AclChange(object):
     """Generator that yields entries that match the change descriptor.
 
     Args:
-      current_acl: An instance of bogo.gs.acl.ACL which will be searched
-                   for matching entries.
+      current_acl: A list of apitools_messages.BucketAccessControls or
+                   ObjectAccessControls which will be searched for matching
+                   entries.
 
     Yields:
-      An instance of boto.gs.acl.Entry.
+      An apitools_messages.BucketAccessControl or ObjectAccessControl.
     """
-    for entry in current_acl.entries.entry_list:
-      if entry.scope.type == self.scope_type:
-        if self.scope_type in ['UserById', 'GroupById']:
-          if self.identifier == entry.scope.id:
-            yield entry
-        elif self.scope_type in ['UserByEmail', 'GroupByEmail']:
-          if self.identifier == entry.scope.email_address:
-            yield entry
-        elif self.scope_type == 'GroupByDomain':
-          if self.identifier == entry.scope.domain:
-            yield entry
-        elif self.scope_type in ['AllUsers', 'AllAuthenticatedUsers']:
-          yield entry
-        else:
-          raise CommandException('Found an unrecognized ACL '
-                                 'entry type, aborting.')
+    for entry in current_acl:
+      if (self.scope_type in ('UserById', 'GroupById') and
+          entry.entityId and self.identifier == entry.entityId):
+        yield entry
+      elif (self.scope_type in ('UserByEmail', 'GroupByEmail')
+            and entry.email and self.identifier == entry.email):
+        yield entry
+      elif (self.scope_type == 'GroupByDomain' and
+            entry.domain and self.identifier == entry.domain):
+        yield entry
+      elif (self.scope_type == 'Project' and
+            entry.domain and self.identifier == entry.project):
+        yield entry
+      elif (self.scope_type == 'AllUsers' and
+            entry.entity.lower() == self.public_entity_all_users.lower()):
+        yield entry
+      elif (self.scope_type == 'AllAuthenticatedUsers' and
+            entry.entity.lower() == self.public_entity_all_auth_users.lower()):
+        yield entry
 
-  def _AddEntry(self, current_acl):
-    """Adds an entry to an ACL."""
-    if self.scope_type in ['UserById', 'UserById', 'GroupById']:
-      entry = acl.Entry(type=self.scope_type, permission=self.perm,
-                        id=self.identifier)
-    elif self.scope_type in ['UserByEmail', 'GroupByEmail']:
-      entry = acl.Entry(type=self.scope_type, permission=self.perm,
-                        email_address=self.identifier)
+  def _AddEntry(self, current_acl, entry_class):
+    """Adds an entry to current_acl."""
+    if self.scope_type == 'UserById':
+      entry = entry_class(entityId=self.identifier, role=self.perm,
+                          entity=self.user_entity_prefix + self.identifier)
+    elif self.scope_type == 'GroupById':
+      entry = entry_class(entityId=self.identifier, role=self.perm,
+                          entity=self.group_entity_prefix + self.identifier)
+    elif self.scope_type == 'Project':
+      entry = entry_class(entityId=self.identifier, role=self.perm,
+                          entity=self.project_entity_prefix + self.identifier)
+    elif self.scope_type == 'UserByEmail':
+      entry = entry_class(email=self.identifier, role=self.perm,
+                          entity=self.user_entity_prefix + self.identifier)
+    elif self.scope_type == 'GroupByEmail':
+      entry = entry_class(email=self.identifier, role=self.perm,
+                          entity=self.group_entity_prefix + self.identifier)
     elif self.scope_type == 'GroupByDomain':
-      entry = acl.Entry(type=self.scope_type, permission=self.perm,
-                        domain=self.identifier)
+      entry = entry_class(domain=self.identifier, role=self.perm,
+                          entity=self.domain_entity_prefix + self.identifier)
+    elif self.scope_type == 'AllAuthenticatedUsers':
+      entry = entry_class(entity=self.public_entity_all_auth_users,
+                          role=self.perm)
+    elif self.scope_type == 'AllUsers':
+      entry = entry_class(entity=self.public_entity_all_users, role=self.perm)
     else:
-      entry = acl.Entry(type=self.scope_type, permission=self.perm)
+      raise CommandException('Add entry to ACL got unexpected scope type %s.' %
+                             self.scope_type)
+    current_acl.append(entry)
 
-    current_acl.entries.entry_list.append(entry)
+  def _GetEntriesClass(self, current_acl):
+    # Entries will share the same class, so just return the first one.
+    for acl_entry in current_acl:
+      return acl_entry.__class__
+    # It's possible that a default object ACL is empty, so if we have
+    # an empty list, assume it is an object ACL.
+    return apitools_messages.ObjectAccessControl().__class__
 
-  def Execute(self, uri, current_acl, logger):
+  def Execute(self, storage_url, current_acl, command_name, logger):
     """Executes the described change on an ACL.
 
     Args:
-      uri: The URI object to change.
-      current_acl: An instance of boto.gs.acl.ACL to permute.
+      storage_url: StorageUrl representing the object to change.
+      current_acl: A list of ObjectAccessControls or
+                   BucketAccessControls to permute.
+      command_name: String name of comamnd being run (e.g., 'acl').
       logger: An instance of logging.Logger.
 
     Returns:
       The number of changes that were made.
     """
-    logger.debug('Executing {0} on {1}'.format(self.raw_descriptor, uri))
+    logger.debug(
+        'Executing %s %s on %s', command_name, self.raw_descriptor, storage_url)
 
-    if self.perm == 'WRITE' and uri.names_object():
-      logger.warning(
-          'Skipping {0} on {1}, as WRITE does not apply to objects'
-          .format(self.raw_descriptor, uri))
-      return 0
+    if self.perm == 'WRITER':
+      if command_name == 'acl' and storage_url.IsObject():
+        logger.warning(
+            'Skipping %s on %s, as WRITER does not apply to objects',
+            self.raw_descriptor, storage_url)
+        return 0
+      elif command_name == 'defacl':
+        raise CommandException('WRITER cannot be set as a default object ACL '
+                               'because WRITER does not apply to objects')
 
+    entry_class = self._GetEntriesClass(current_acl)
     matching_entries = list(self._YieldMatchingEntries(current_acl))
     change_count = 0
     if matching_entries:
       for entry in matching_entries:
-        if entry.permission != self.perm:
-          entry.permission = self.perm
+        if entry.role != self.perm:
+          entry.role = self.perm
           change_count += 1
     else:
-      self._AddEntry(current_acl)
+      self._AddEntry(current_acl, entry_class)
       change_count = 1
 
-    parsed_acl = minidom.parseString(current_acl.to_xml())
-    logger.debug('New Acl:\n{0}'.format(parsed_acl.toprettyxml()))
+    logger.debug('New Acl:\n%s', str(current_acl))
     return change_count
 
 
-class AclDel(AclChange):
+class AclDel(object):
   """Represents a logical change from an access control list."""
   scope_regexes = {
       r'All(Users)?$': 'AllUsers',
@@ -225,24 +280,39 @@ class AclDel(AclChange):
     self.perm = 'NONE'
 
   def _YieldMatchingEntries(self, current_acl):
-    for entry in current_acl.entries.entry_list:
-      if self.identifier == entry.scope.id:
+    """Generator that yields entries that match the change descriptor.
+
+    Args:
+      current_acl: An instance of apitools_messages.BucketAccessControls or
+                   ObjectAccessControls which will be searched for matching
+                   entries.
+
+    Yields:
+      An apitools_messages.BucketAccessControl or ObjectAccessControl.
+    """
+    for entry in current_acl:
+      if entry.entityId and self.identifier == entry.entityId:
         yield entry
-      elif self.identifier == entry.scope.email_address:
+      elif entry.email and self.identifier == entry.email:
         yield entry
-      elif self.identifier == entry.scope.domain:
+      elif entry.domain and self.identifier == entry.domain:
         yield entry
-      elif self.identifier == 'AllUsers' and entry.scope.type == 'AllUsers':
+      elif entry.projectTeam:
+        project_team = entry.projectTeam
+        acl_label = project_team.team + '-' + project_team.projectNumber
+        if acl_label == self.identifier:
+          yield entry
+      elif entry.entity.lower() == 'allusers' and self.identifier == 'AllUsers':
         yield entry
-      elif (self.identifier == 'AllAuthenticatedUsers'
-            and entry.scope.type == 'AllAuthenticatedUsers'):
+      elif (entry.entity.lower() == 'allauthenticatedusers' and
+            self.identifier == 'AllAuthenticatedUsers'):
         yield entry
 
-  def Execute(self, uri, current_acl, logger):
-    logger.debug('Executing {0} on {1}'.format(self.raw_descriptor, uri))
+  def Execute(self, storage_url, current_acl, command_name, logger):
+    logger.debug(
+        'Executing %s %s on %s', command_name, self.raw_descriptor, storage_url)
     matching_entries = list(self._YieldMatchingEntries(current_acl))
     for entry in matching_entries:
-      current_acl.entries.entry_list.remove(entry)
-    parsed_acl = minidom.parseString(current_acl.to_xml())
-    logger.debug('New Acl:\n{0}'.format(parsed_acl.toprettyxml()))
+      current_acl.remove(entry)
+    logger.debug('New Acl:\n%s', str(current_acl))
     return len(matching_entries)

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
@@ -18,19 +19,20 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
-
 """Unit tests for help command."""
+
+from __future__ import absolute_import
 
 import gslib.tests.testcase as testcase
 
 
-class HelpTest(testcase.GsUtilUnitTestCase):
-  """Help command test suite."""
+class HelpUnitTests(testcase.GsUtilUnitTestCase):
+  """Help command unit test suite."""
 
   def test_help_noargs(self):
     stdout = self.RunCommand('help', return_stdout=True)
     self.assertIn('Available commands', stdout)
-    
+
   def test_help_subcommand_arg(self):
     stdout = self.RunCommand('help', ['web', 'set'], return_stdout=True)
     self.assertIn('gsutil web set', stdout)
@@ -60,3 +62,11 @@ class HelpTest(testcase.GsUtilUnitTestCase):
   def test_command_args_with_help(self):
     stdout = self.RunCommand('cp', ['foo', 'bar', '--help'], return_stdout=True)
     self.assertIn('cp - Copy files and objects', stdout)
+
+
+class HelpIntegrationTests(testcase.GsUtilIntegrationTestCase):
+  """Help command integration test suite."""
+
+  def test_help_wrong_num_args(self):
+    stderr = self.RunGsUtil(['cp'], return_stderr=True, expected_status=1)
+    self.assertIn('Usage:', stderr)

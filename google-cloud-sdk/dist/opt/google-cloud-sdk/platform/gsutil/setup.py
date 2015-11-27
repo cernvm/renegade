@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Copyright 2011 Google Inc.
+# Copyright 2011 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 """Setup installation module for gsutil."""
 
 import os
-from setuptools import setup, find_packages
+
+from setuptools import find_packages
+from setuptools import setup
 from setuptools.command import build_py
 from setuptools.command import sdist
 
@@ -33,22 +35,27 @@ management tasks, including:
 """
 
 requires = [
-    'boto==2.22.1',
-    'httplib2>=0.8',
-    'python-gflags>=2.0',
-    'google-api-python-client>=1.1',
-    'pyOpenSSL>=0.13',
+    'boto==2.38.0',
     'crcmod>=1.7',
+    'gcs-oauth2-boto-plugin>=1.9',
+    'google-apitools==0.4.10',
+    'httplib2>=0.8',
+    'oauth2client>=1.4.11',
+    'protorpc>=0.10.0',
+    'pyOpenSSL>=0.13',
+    'python-gflags>=2.0',
+    'retry_decorator>=1.0.0',
+    'six>=1.9.0',
     # Not using 1.02 because of:
     #   https://code.google.com/p/socksipy-branch/issues/detail?id=3
     'SocksiPy-branch==1.01',
-    'retry_decorator>=1.0.0',
 ]
 
 dependency_links = [
     # Note: this commit ID should be kept in sync with the 'third_party/boto'
     # entry in 'git submodule status'.
-    'https://github.com/boto/boto/archive/7cb344c382c3acb95038cf54bf8a84d5242318b9.tar.gz#egg=boto-2.22.1',
+    # pylint: disable=line-too-long
+    'https://github.com/boto/boto/archive/cb8aeec987ddcd5fecd206e38777b9a15cb0bcab.tar.gz#egg=boto-2.38.0',
 ]
 
 CURDIR = os.path.abspath(os.path.dirname(__file__))
@@ -62,16 +69,17 @@ with open(os.path.join(CURDIR, 'CHECKSUM'), 'r') as f:
 
 
 def PlaceNeededFiles(self, target_dir):
+  """Populates necessary files into the gslib module and unit test modules."""
   target_dir = os.path.join(target_dir, 'gslib')
   self.mkpath(target_dir)
 
   # Copy the gsutil root VERSION file into gslib module.
-  with open(os.path.join(target_dir, 'VERSION'), 'w') as f:
-    f.write(VERSION)
+  with open(os.path.join(target_dir, 'VERSION'), 'w') as fp:
+    fp.write(VERSION)
 
   # Copy the gsutil root CHECKSUM file into gslib module.
-  with open(os.path.join(target_dir, 'CHECKSUM'), 'w') as f:
-    f.write(CHECKSUM)
+  with open(os.path.join(target_dir, 'CHECKSUM'), 'w') as fp:
+    fp.write(CHECKSUM)
 
   # Copy the Boto test module required by gsutil unit tests.
   tests_dir = os.path.join(target_dir, 'tests')
@@ -87,19 +95,20 @@ def PlaceNeededFiles(self, target_dir):
   if not os.path.isfile(mock_storage_src):
     raise Exception('Unable to find required boto test source file at %s or %s.'
                     % (mock_storage_src1, mock_storage_src2))
-  with open(mock_storage_src, 'r') as f:
-    mock_storage_contents = f.read()
-  with open(mock_storage_dst, 'w') as f:
-    f.write('#\n'
-            '# This file was copied during gsutil package generation from\n'
-            '# the Boto test suite, originally located at:\n'
-            '#   tests/integration/s3/mock_storage_service.py\n'
-            '# DO NOT MODIFY\n'
-            '#\n\n')
-    f.write(mock_storage_contents)
+  with open(mock_storage_src, 'r') as fp:
+    mock_storage_contents = fp.read()
+  with open(mock_storage_dst, 'w') as fp:
+    fp.write('#\n'
+             '# This file was copied during gsutil package generation from\n'
+             '# the Boto test suite, originally located at:\n'
+             '#   tests/integration/s3/mock_storage_service.py\n'
+             '# DO NOT MODIFY\n'
+             '#\n\n')
+    fp.write(mock_storage_contents)
 
 
 class CustomBuildPy(build_py.build_py):
+  """Excludes update command from package-installed versions of gsutil."""
 
   def byte_compile(self, files):
     for filename in files:

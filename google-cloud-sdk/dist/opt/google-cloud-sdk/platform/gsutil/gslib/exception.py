@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2010 Google Inc. All Rights Reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
@@ -18,11 +19,12 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
-
 """gsutil exceptions.
 
 The exceptions in this module are for use across multiple different classes.
 """
+
+from __future__ import absolute_import
 
 
 class AbortException(StandardError):
@@ -60,20 +62,26 @@ class CommandException(StandardError):
     self.informational = informational
 
   def __repr__(self):
-    return 'CommandException: %s' % self.reason
+    return str(self)
 
   def __str__(self):
     return 'CommandException: %s' % self.reason
 
 
-class ProjectIdException(StandardError):
+class HashMismatchException(Exception):
+  """Exception raised when data integrity validation fails."""
+  pass
 
-  def __init__(self, reason):
-    StandardError.__init__(self)
-    self.reason = reason
+
+class InvalidUrlError(Exception):
+  """Exception raised when URL is invalid."""
+
+  def __init__(self, message):
+    Exception.__init__(self, message)
+    self.message = message
 
   def __repr__(self):
-    return 'ProjectIdException: %s' % self.reason
+    return str(self)
 
   def __str__(self):
-    return 'ProjectIdException: %s' % self.reason
+    return 'InvalidUrlError: %s' % self.message

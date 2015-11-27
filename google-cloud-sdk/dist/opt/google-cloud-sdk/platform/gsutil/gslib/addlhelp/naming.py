@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2012 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Additional help about gsutil object and bucket naming."""
 
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
+from __future__ import absolute_import
+
 from gslib.help_provider import HelpProvider
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 
-_detailed_help_text = ("""
+_DETAILED_HELP_TEXT = ("""
 <B>BUCKET NAME REQUIREMENTS</B>
   Google Cloud Storage has a single namespace, so you will not be allowed
   to create a bucket with a name already in use by another user. You can,
@@ -73,6 +71,9 @@ _detailed_help_text = ("""
     these characters as wildcards, so including any of these characters in
     object names can make it difficult or impossible to perform various wildcard
     operations using gsutil (see 'gsutil help wildcards').
+
+  See also 'gsutil help encoding' about file/object name encoding requirements
+  and potential interoperability concerns.
 
 
 <B>DOMAIN NAMED BUCKETS</B>
@@ -167,23 +168,18 @@ _detailed_help_text = ("""
   inclusion of any other resource records if there is a CNAME resource record
   present. If you want to create a CNAME resource record for a domain, you must
   use the Meta tag verification method or the HTML file verification method.
-
-
 """)
 
 
 class CommandOptions(HelpProvider):
   """Additional help about gsutil object and bucket naming."""
 
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'naming',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['domain', 'limits', 'name', 'names'],
-    # Type of help:
-    HELP_TYPE : HelpType.ADDITIONAL_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Object and Bucket Naming',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Help specification. See help_provider.py for documentation.
+  help_spec = HelpProvider.HelpSpec(
+      help_name='naming',
+      help_name_aliases=['domain', 'limits', 'name', 'names'],
+      help_type='additional_help',
+      help_one_line_summary='Object and Bucket Naming',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )

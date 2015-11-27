@@ -1,4 +1,0 @@
-bigquery_client
-table_formatter
-bq
-discovery

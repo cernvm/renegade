@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2011 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,15 +12,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""No-op authorization plugin allowing boto anonymous access.
 
-# This code implements a no-op auth plugin, which allows users to use
-# gsutil for accessing publicly readable buckets and objects without first
-# signing up for an account.
+This allows users to use gsutil for accessing publicly readable buckets and
+objects without first signing up for an account.
+"""
+
+from __future__ import absolute_import
 
 from boto.auth_handler import AuthHandler
 
 
 class NoOpAuth(AuthHandler):
+  """No-op authorization plugin class."""
 
   capability = ['s3']
 

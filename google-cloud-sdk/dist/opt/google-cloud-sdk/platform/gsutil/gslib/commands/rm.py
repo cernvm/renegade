@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2011 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,33 +12,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Implementation of Unix-like rm command for cloud storage providers."""
 
-import boto
-import textwrap
+from __future__ import absolute_import
 
-from boto.exception import GSResponseError
+from gslib.cloud_api import BucketNotFoundException
+from gslib.cloud_api import NotEmptyException
+from gslib.cloud_api import NotFoundException
+from gslib.cloud_api import ServiceException
 from gslib.command import Command
-from gslib.command import COMMAND_NAME
-from gslib.command import COMMAND_NAME_ALIASES
-from gslib.command import FILE_URIS_OK
-from gslib.command import MAX_ARGS
-from gslib.command import MIN_ARGS
-from gslib.command import PROVIDER_URIS_OK
-from gslib.command import SUPPORTED_SUB_ARGS
-from gslib.command import URIS_START_ARG
+from gslib.command import GetFailureCount
+from gslib.command import ResetFailureCount
+from gslib.command_argument import CommandArgument
+from gslib.cs_api_map import ApiSelector
 from gslib.exception import CommandException
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 from gslib.name_expansion import NameExpansionIterator
+from gslib.storage_url import StorageUrlFromString
+from gslib.translation_helper import PreconditionsFromHeaders
+from gslib.util import GetCloudApiInstance
 from gslib.util import NO_MAX
+from gslib.util import Retry
+from gslib.util import StdinIterator
 
-_detailed_help_text = ("""
+
+_SYNOPSIS = """
+  gsutil rm [-f] [-r] url...
+  gsutil rm [-f] [-r] -I
+"""
+
+_DETAILED_HELP_TEXT = ("""
 <B>SYNOPSIS</B>
-  gsutil rm [-f] [-R] uri...
+""" + _SYNOPSIS + """
 
 
 <B>DESCRIPTION</B>
@@ -54,17 +59,21 @@ _detailed_help_text = ("""
   will remove all objects under gs://bucket/subdir or any of its
   subdirectories.
 
-  You can also use the -R option to specify recursive object deletion. Thus, for
+  You can also use the -r option to specify recursive object deletion. Thus, for
   example, either of the following two commands will remove gs://bucket/subdir
   and all objects and subdirectories under it:
 
     gsutil rm gs://bucket/subdir**
-    gsutil rm -R gs://bucket/subdir
+    gsutil rm -r gs://bucket/subdir
 
-  Running gsutil rm -R on a bucket will delete all objects in the bucket, and
-  then delete the bucket:
+  The -r option will also delete all object versions in the subdirectory for
+  versioning-enabled buckets, whereas the ** command will only delete the live
+  version of each object in the subdirectory.
 
-    gsutil rm -R gs://bucket
+  Running gsutil rm -r on a bucket will delete all versions of all objects in
+  the bucket, and then delete the bucket:
+
+    gsutil rm -r gs://bucket
 
   If you want to delete all objects in the bucket, but not the bucket itself,
   this command will work:
@@ -75,7 +84,15 @@ _detailed_help_text = ("""
   gsutil -m option, to perform a parallel (multi-threaded/multi-processing)
   removes:
 
-    gsutil -m rm -R gs://my_bucket/subdir
+    gsutil -m rm -r gs://my_bucket/subdir
+
+  You can pass a list of URLs (one per line) to remove on stdin instead of as
+  command line arguments by using the -I option. This allows you to use gsutil
+  in a pipeline to remove objects identified by a program, such as:
+
+    some_program | gsutil -m rm -I
+
+  The contents of stdin can name cloud URLs and wildcards of cloud URLs.
 
   Note that gsutil rm will refuse to remove files from the local
   file system. For example this will fail:
@@ -89,68 +106,101 @@ _detailed_help_text = ("""
   versioning on your bucket(s). See 'gsutil help versions' for details.
 
 
+<B>DATA RESTORATION FROM ACCIDENTAL DELETION OR OVERWRITES</B>
+Google Cloud Storage does not provide support for restoring data lost
+or overwritten due to customer errors. If you have concerns that your
+application software (or your users) may at some point erroneously delete or
+overwrite data, you can protect yourself from that risk by enabling Object
+Versioning (see "gsutil help versioning"). Doing so increases storage costs,
+which can be partially mitigated by configuring Lifecycle Management to delete
+older object versions (see "gsutil help lifecycle").
+
+
 <B>OPTIONS</B>
   -f          Continues silently (without printing error messages) despite
-              errors when removing multiple objects. With this option the gsutil
-              exit status will be 0 even if some objects couldn't be removed.
+              errors when removing multiple objects. If some of the objects
+              could not be removed, gsutil's exit status will be non-zero even
+              if this flag is set. This option is implicitly set when running
+              "gsutil -m rm ...".
 
-  -R, -r      Causes bucket contents to be removed recursively (i.e., including
-              all objects and subdirectories). If used with a bucket-only URI
-              (like gs://bucket), after deleting objects and subdirectories
-              gsutil will delete the bucket.
+  -I          Causes gsutil to read the list of objects to remove from stdin.
+              This allows you to run a program that generates the list of
+              objects to remove.
+
+  -R, -r      Causes bucket or bucket subdirectory contents (all objects and
+              subdirectories that it contains) to be removed recursively. If
+              used with a bucket-only URL (like gs://bucket), after deleting
+              objects and subdirectories gsutil will delete the bucket.  The -r
+              flag implies the -a flag and will delete all object versions.
 
   -a          Delete all versions of an object.
 """)
 
+
 def _RemoveExceptionHandler(cls, e):
   """Simple exception handler to allow post-completion status."""
-  cls.logger.error(str(e))
-  cls.everything_removed_okay = False
-  
-def _RemoveFuncWrapper(cls, name_expansion_result):
-  cls._RemoveFunc(name_expansion_result)
+  if not cls.continue_on_error:
+    cls.logger.error(str(e))
+  # TODO: Use shared state to track missing bucket names when we get a
+  # BucketNotFoundException. Then improve bucket removal logic and exception
+  # messages.
+  if isinstance(e, BucketNotFoundException):
+    cls.bucket_not_found_count += 1
+    cls.logger.error(str(e))
+  else:
+    cls.op_failure_count += 1
+
+
+# pylint: disable=unused-argument
+def _RemoveFoldersExceptionHandler(cls, e):
+  """When removing folders, we don't mind if none exist."""
+  if (isinstance(e, CommandException.__class__) and
+      'No URLs matched' in e.message) or isinstance(e, NotFoundException):
+    pass
+  else:
+    raise e
+
+
+def _RemoveFuncWrapper(cls, name_expansion_result, thread_state=None):
+  cls.RemoveFunc(name_expansion_result, thread_state=thread_state)
 
 
 class RmCommand(Command):
   """Implementation of gsutil rm command."""
 
-  # Command specification (processed by parent class).
-  command_spec = {
-    # Name of command.
-    COMMAND_NAME : 'rm',
-    # List of command name aliases.
-    COMMAND_NAME_ALIASES : ['del', 'delete', 'remove'],
-    # Min number of args required by this command.
-    MIN_ARGS : 1,
-    # Max number of args required by this command, or NO_MAX.
-    MAX_ARGS : NO_MAX,
-    # Getopt-style string specifying acceptable sub args.
-    SUPPORTED_SUB_ARGS : 'afrRv',
-    # True if file URIs acceptable for this command.
-    FILE_URIS_OK : False,
-    # True if provider-only URIs acceptable for this command.
-    PROVIDER_URIS_OK : False,
-    # Index in args of first URI arg.
-    URIS_START_ARG : 0,
-  }
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'rm',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['del', 'delete', 'remove'],
-    # Type of help:
-    HELP_TYPE : HelpType.COMMAND_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Remove objects',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Command specification. See base class for documentation.
+  command_spec = Command.CreateCommandSpec(
+      'rm',
+      command_name_aliases=['del', 'delete', 'remove'],
+      usage_synopsis=_SYNOPSIS,
+      min_args=0,
+      max_args=NO_MAX,
+      supported_sub_args='afIrR',
+      file_url_ok=False,
+      provider_url_ok=False,
+      urls_start_arg=0,
+      gs_api_support=[ApiSelector.XML, ApiSelector.JSON],
+      gs_default_api=ApiSelector.JSON,
+      argparse_arguments=[
+          CommandArgument.MakeZeroOrMoreCloudURLsArgument()
+      ]
+  )
+  # Help specification. See help_provider.py for documentation.
+  help_spec = Command.HelpSpec(
+      help_name='rm',
+      help_name_aliases=['del', 'delete', 'remove'],
+      help_type='command_help',
+      help_one_line_summary='Remove objects',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )
 
-  # Command entry point.
   def RunCommand(self):
-    # self.recursion_requested initialized in command.py (so can be checked
-    # in parent class for all commands).
-    self.continue_on_error = False
+    """Command entry point for the rm command."""
+    # self.recursion_requested is initialized in command.py (so it can be
+    # checked in parent class for all commands).
+    self.continue_on_error = self.parallel_operations
+    self.read_args_from_stdin = False
     self.all_versions = False
     if self.sub_opts:
       for o, unused_a in self.sub_opts:
@@ -158,51 +208,59 @@ class RmCommand(Command):
           self.all_versions = True
         elif o == '-f':
           self.continue_on_error = True
+        elif o == '-I':
+          self.read_args_from_stdin = True
         elif o == '-r' or o == '-R':
           self.recursion_requested = True
-        elif o == '-v':
-          self.logger.info('WARNING: The %s -v option is no longer'
-                           ' needed, and will eventually be removed.\n'
-                           % self.command_name)
+          self.all_versions = True
 
-    if self.recursion_requested and not self.all_versions:
-      for uri_str in self.args:
-        # WildcardIterator returns BucketListingRefs.
-        for blr in self.WildcardIterator(uri_str):
-          uri = blr.GetUri()
-          if uri.names_bucket() and uri.get_versioning_config():
-            raise CommandException(
-                'Running gsutil rm -R on a bucket-only URI (%s)\nwith '
-                'versioning enabled will not work without specifying the -a '
-                'flag. Please try\nagain, using:\n\tgsutil rm -Ra %s'
-                % (uri_str,' '.join(self.args)))
+    if self.read_args_from_stdin:
+      if self.args:
+        raise CommandException('No arguments allowed with the -I flag.')
+      url_strs = StdinIterator()
+    else:
+      if not self.args:
+        raise CommandException('The rm command (without -I) expects at '
+                               'least one URL.')
+      url_strs = self.args
 
-    # Used to track if any files failed to be removed.
-    self.everything_removed_okay = True
+    # Tracks if any deletes failed.
+    self.op_failure_count = 0
 
-    bucket_uris_to_delete = []
+    # Tracks if any buckets were missing.
+    self.bucket_not_found_count = 0
+
+    bucket_urls_to_delete = []
+    bucket_strings_to_delete = []
     if self.recursion_requested:
-      for uri_str in self.args:
-        for blr in self.WildcardIterator(uri_str):
-          uri = blr.GetUri()
-          if uri.names_bucket():
-            bucket_uris_to_delete.append(uri)
+      bucket_fields = ['id']
+      for url_str in url_strs:
+        url = StorageUrlFromString(url_str)
+        if url.IsBucket() or url.IsProvider():
+          for blr in self.WildcardIterator(url_str).IterBuckets(
+              bucket_fields=bucket_fields):
+            bucket_urls_to_delete.append(blr.storage_url)
+            bucket_strings_to_delete.append(url_str)
+
+    self.preconditions = PreconditionsFromHeaders(self.headers or {})
 
     try:
-      # Expand wildcards, dirs, buckets, and bucket subdirs in URIs.
+      # Expand wildcards, dirs, buckets, and bucket subdirs in URLs.
       name_expansion_iterator = NameExpansionIterator(
-          self.command_name, self.proj_id_handler, self.headers, self.debug,
-          self.logger, self.bucket_storage_uri_class, self.args,
-          self.recursion_requested, flat=self.recursion_requested,
-          all_versions=self.all_versions)
+          self.command_name, self.debug, self.logger, self.gsutil_api,
+          url_strs, self.recursion_requested, project_id=self.project_id,
+          all_versions=self.all_versions,
+          continue_on_error=self.continue_on_error or self.parallel_operations)
+
       # Perform remove requests in parallel (-m) mode, if requested, using
       # configured number of parallel processes and threads. Otherwise,
       # perform requests with sequential function calls in current process.
       self.Apply(_RemoveFuncWrapper, name_expansion_iterator,
                  _RemoveExceptionHandler,
-                 fail_on_error=(not self.continue_on_error))
+                 fail_on_error=(not self.continue_on_error),
+                 shared_attrs=['op_failure_count', 'bucket_not_found_count'])
 
-    # Assuming the bucket has versioning enabled, uri's that don't map to
+    # Assuming the bucket has versioning enabled, url's that don't map to
     # objects should throw an error even with all_versions, since the prior
     # round of deletes only sends objects to a history table.
     # This assumption that rm -a is only called for versioned buckets should be
@@ -211,56 +269,81 @@ class RmCommand(Command):
       # Don't raise if there are buckets to delete -- it's valid to say:
       #   gsutil rm -r gs://some_bucket
       # if the bucket is empty.
-      if not bucket_uris_to_delete and not self.continue_on_error:
+      if not bucket_urls_to_delete and not self.continue_on_error:
         raise
-    except GSResponseError, e:
+      # Reset the failure count if we failed due to an empty bucket that we're
+      # going to delete.
+      msg = 'No URLs matched: '
+      if msg in str(e):
+        parts = str(e).split(msg)
+        if len(parts) == 2 and parts[1] in bucket_strings_to_delete:
+          ResetFailureCount()
+        else:
+          raise
+    except ServiceException, e:
       if not self.continue_on_error:
         raise
 
-    if not self.everything_removed_okay and not self.continue_on_error:
+    if self.bucket_not_found_count:
+      raise CommandException('Encountered non-existent bucket during listing')
+
+    if self.op_failure_count and not self.continue_on_error:
       raise CommandException('Some files could not be removed.')
 
     # If this was a gsutil rm -r command covering any bucket subdirs,
     # remove any dir_$folder$ objects (which are created by various web UI
     # tools to simulate folders).
     if self.recursion_requested:
+      had_previous_failures = GetFailureCount() > 0
       folder_object_wildcards = []
-      for uri_str in self.args:
-        uri = self.suri_builder.StorageUri(uri_str)
-        if uri.names_object:
-          folder_object_wildcards.append('%s**_$folder$' % uri)
-      if len(folder_object_wildcards):
+      for url_str in url_strs:
+        url = StorageUrlFromString(url_str)
+        if url.IsObject():
+          folder_object_wildcards.append('%s**_$folder$' % url_str)
+      if folder_object_wildcards:
         self.continue_on_error = True
         try:
           name_expansion_iterator = NameExpansionIterator(
-              self.command_name, self.proj_id_handler, self.headers, self.debug,
-              self.logger, self.bucket_storage_uri_class,
-              folder_object_wildcards, self.recursion_requested, flat=True,
+              self.command_name, self.debug,
+              self.logger, self.gsutil_api,
+              folder_object_wildcards, self.recursion_requested,
+              project_id=self.project_id,
               all_versions=self.all_versions)
+          # When we're removing folder objects, always continue on error
           self.Apply(_RemoveFuncWrapper, name_expansion_iterator,
-                     _RemoveExceptionHandler,
-                     fail_on_error=(not self.continue_on_error))
+                     _RemoveFoldersExceptionHandler,
+                     fail_on_error=False)
         except CommandException as e:
           # Ignore exception from name expansion due to an absent folder file.
-          if not e.reason.startswith('No URIs matched:'):
+          if not e.reason.startswith('No URLs matched:'):
             raise
+        if not had_previous_failures:
+          ResetFailureCount()
 
-    # Now that all data has been deleted, delete any bucket URIs.
-    for uri in bucket_uris_to_delete:
-      self.logger.info('Removing %s...', uri)
-      uri.delete_bucket(self.headers)
+    # Now that all data has been deleted, delete any bucket URLs.
+    for url in bucket_urls_to_delete:
+      self.logger.info('Removing %s...', url)
+
+      @Retry(NotEmptyException, tries=3, timeout_secs=1)
+      def BucketDeleteWithRetry():
+        self.gsutil_api.DeleteBucket(url.bucket_name, provider=url.scheme)
+
+      BucketDeleteWithRetry()
+
+    if self.op_failure_count:
+      plural_str = 's' if self.op_failure_count else ''
+      raise CommandException('%d file%s/object%s could not be removed.' % (
+          self.op_failure_count, plural_str, plural_str))
+
     return 0
 
-  def _RemoveFunc(self, name_expansion_result):
-    exp_src_uri = self.suri_builder.StorageUri(
-        name_expansion_result.GetExpandedUriStr(),
-        is_latest=name_expansion_result.is_latest)
-    
-    self.logger.info('Removing %s...', name_expansion_result.expanded_uri_str)
-    try:
-      exp_src_uri.delete_key(validate=False, headers=self.headers)
-    except:
-      if self.continue_on_error:
-        self.everything_removed_okay = False
-      else:
-        raise
+  def RemoveFunc(self, name_expansion_result, thread_state=None):
+    gsutil_api = GetCloudApiInstance(self, thread_state=thread_state)
+
+    exp_src_url = name_expansion_result.expanded_storage_url
+    self.logger.info('Removing %s...', exp_src_url)
+    gsutil_api.DeleteObject(
+        exp_src_url.bucket_name, exp_src_url.object_name,
+        preconditions=self.preconditions, generation=exp_src_url.generation,
+        provider=exp_src_url.scheme)
+

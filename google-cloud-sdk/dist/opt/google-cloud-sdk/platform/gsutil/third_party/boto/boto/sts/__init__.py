@@ -20,8 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-from connection import STSConnection
-from boto.regioninfo import RegionInfo
+from boto.sts.connection import STSConnection
+from boto.regioninfo import RegionInfo, get_regions
 
 
 def regions():
@@ -31,16 +31,7 @@ def regions():
     :rtype: list
     :return: A list of :class:`boto.regioninfo.RegionInfo` instances
     """
-    return [RegionInfo(name='us-east-1',
-                       endpoint='sts.amazonaws.com',
-                       connection_cls=STSConnection),
-            RegionInfo(name='us-gov-west-1',
-                       endpoint='sts.us-gov-west-1.amazonaws.com',
-                       connection_cls=STSConnection),
-            RegionInfo(name='cn-north-1',
-                       endpoint='sts.cn-north-1.amazonaws.com.cn',
-                       connection_cls=STSConnection),
-            ]
+    return get_regions('sts', connection_cls=STSConnection)
 
 
 def connect_to_region(region_name, **kw_params):

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2012 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,19 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Additional help about using gsutil for production tasks."""
 
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
+from __future__ import absolute_import
+
 from gslib.help_provider import HelpProvider
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 
-_detailed_help_text = ("""
+_DETAILED_HELP_TEXT = ("""
 <B>OVERVIEW</B>
   If you use gsutil in large production tasks (such as uploading or
-  downloading many GB of data each night), there are a number of things
+  downloading many GiBs of data each night), there are a number of things
   you can do to help ensure success. Specifically, this section discusses
   how to script large production tasks around gsutil's resumable transfer
   mechanism.
@@ -32,25 +30,20 @@ _detailed_help_text = ("""
 <B>BACKGROUND ON RESUMABLE TRANSFERS</B>
   First, it's helpful to understand gsutil's resumable transfer mechanism,
   and how your script needs to be implemented around this mechanism to work
-  reliably. gsutil uses the resumable transfer support in the boto library
-  when you attempt to upload or download a file larger than a configurable
-  threshold (by default, this threshold is 2 MB). When a transfer fails
-  partway through (e.g., because of an intermittent network problem),
-  boto uses a randomized binary exponential backoff-and-retry strategy:
-  wait a random period between [0..1] seconds and retry; if that fails,
-  wait a random period between [0..2] seconds and retry; and if that
-  fails, wait a random period between [0..4] seconds, and so on, up to a
-  configurable number of times (the default is 6 times). Thus, the retry
-  actually spans a randomized period up to 1+2+4+8+16+32=63 seconds.
-
-  If the transfer fails each of these attempts with no intervening
-  progress, gsutil gives up on the transfer, but keeps a "tracker" file
-  for it in a configurable location (the default location is ~/.gsutil/,
-  in a file named by a combination of the SHA1 hash of the name of the
-  bucket and object being transferred and the last 16 characters of the
-  file name). When transfers fail in this fashion, you can rerun gsutil
-  at some later time (e.g., after the networking problem has been
-  resolved), and the resumable transfer picks up where it left off.
+  reliably. gsutil uses resumable transfer support when you attempt to upload
+  or download a file larger than a configurable threshold (by default, this
+  threshold is 2 MiB). When a transfer fails partway through (e.g., because of
+  an intermittent network problem), gsutil uses a truncated randomized binary
+  exponential backoff-and-retry strategy that by default will retry transfers up
+  to 23 times over a 10 minute period of time (see "gsutil help retries" for
+  details). If the transfer fails each of these attempts with no intervening
+  progress, gsutil gives up on the transfer, but keeps a "tracker" file for
+  it in a configurable location (the default location is ~/.gsutil/, in a file
+  named by a combination of the SHA1 hash of the name of the bucket and object
+  being transferred and the last 16 characters of the file name). When transfers
+  fail in this fashion, you can rerun gsutil at some later time (e.g., after
+  the networking problem has been resolved), and the resumable transfer picks
+  up where it left off.
 
 
 <B>SCRIPTING DATA TRANSFER TASKS</B>
@@ -60,8 +53,8 @@ _detailed_help_text = ("""
   we offer a number of suggestions about how this type of scripting should
   be implemented:
 
-  1. When resumable transfers fail without any progress 6 times in a row
-     over the course of up to 63 seconds, it probably won't work to simply
+  1. When resumable transfers fail without any progress 23 times in a row
+     over the course of up to 10 minutes, it probably won't work to simply
      retry the transfer immediately. A more successful strategy would be to
      have a cron job that runs every 30 minutes, determines which transfers
      need to be run, and runs them. If the network experiences intermittent
@@ -97,7 +90,7 @@ _detailed_help_text = ("""
      files to the cloud. You can do this in parallel batches by using a command
      like:
 
-       gsutil -m cp -R to_upload/subdir_$i gs://bucket/subdir_$i
+       gsutil -m cp -r to_upload/subdir_$i gs://bucket/subdir_$i
 
      where i is a shell loop variable. Make sure to check the shell $status
      variable is 0 after each gsutil cp command, to detect if some of the copies
@@ -114,15 +107,11 @@ _detailed_help_text = ("""
      your periodic download script by querying the database locally instead
      of performing a bucket listing.
 
-  5. Make sure you don't delete partially downloaded files after a transfer
-     fails: gsutil picks up where it left off (and performs an MD5 check of
-     the final downloaded content to ensure data integrity), so deleting
+  5. Make sure you don't delete partially downloaded temporary files after a
+     transfer fails: gsutil picks up where it left off (and performs a hash
+     of the final downloaded content to ensure data integrity), so deleting
      partially transferred files will cause you to lose progress and make
-     more wasteful use of your network. You should also make sure whatever
-     process is waiting to consume the downloaded data doesn't get pointed
-     at the partially downloaded files. One way to do this is to download
-     into a staging directory and then move successfully downloaded files to
-     a directory where consumer processes will read them.
+     more wasteful use of your network.
 
   6. If you have a fast network connection, you can speed up the transfer of
      large numbers of files by using the gsutil -m (multi-threading /
@@ -136,39 +125,25 @@ _detailed_help_text = ("""
 
      If you use parallel transfers (gsutil -m) you might want to experiment with
      the number of threads being used (via the parallel_thread_count setting
-     in the .boto config file). By default, gsutil uses 24 threads. Depending
-     on your network speed, available memory, CPU load, and other conditions,
-     this may or may not be optimal. Try experimenting with higher or lower
-     numbers of threads, to find the best number of threads for your
-     environment.
-
-<B>RUNNING GSUTIL ON MULTIPLE MACHINES</B>
-  When running gsutil on multiple machines that are all attempting to use the
-  same OAuth2 refresh token, it is possible to encounter rate limiting errors
-  for the refresh requests (especially if all of these machines are likely to
-  start running gsutil at the same time). To account for this, gsutil will
-  automatically retry OAuth2 refresh requests with a randomized exponential
-  backoff strategy like that which is described in the
-  "BACKGROUND ON RESUMABLE TRANSFERS" section above. The number of retries
-  attempted for OAuth2 refresh requests can be controlled via the
-  "oauth2_refresh_retries" variable in the .boto config file.
+     in the .boto config file). By default, gsutil uses 10 threads for Linux
+     and 24 threads for other operating systems. Depending on your network
+     speed, available memory, CPU load, and other conditions, this may or may
+     not be optimal. Try experimenting with higher or lower numbers of threads
+     to find the best number of threads for your environment.
 """)
 
 
 class CommandOptions(HelpProvider):
   """Additional help about using gsutil for production tasks."""
 
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'prod',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['production', 'resumable', 'resumable upload',
-                         'resumable transfer', 'resumable download',
-                         'scripts', 'scripting'],
-    # Type of help:
-    HELP_TYPE : HelpType.ADDITIONAL_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Scripting Production Transfers',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Help specification. See help_provider.py for documentation.
+  help_spec = HelpProvider.HelpSpec(
+      help_name='prod',
+      help_name_aliases=[
+          'production', 'resumable', 'resumable upload', 'resumable transfer',
+          'resumable download', 'scripts', 'scripting'],
+      help_type='additional_help',
+      help_one_line_summary='Scripting Production Transfers',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )

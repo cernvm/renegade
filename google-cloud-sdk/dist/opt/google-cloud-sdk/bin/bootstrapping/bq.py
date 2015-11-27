@@ -9,7 +9,8 @@ import sys
 
 import bootstrapping
 
-from google.cloud.sdk.core import config
+from googlecloudsdk.core import config
+from googlecloudsdk.core.credentials import gce
 
 
 def main():
@@ -18,12 +19,16 @@ def main():
   project, account = bootstrapping.GetActiveProjectAndAccount()
   json_path = config.Paths().LegacyCredentialsJSONPath(account)
 
-  args = ['--credential_file', json_path]
+  gce_metadata = gce.Metadata()
+  if gce_metadata and account in gce_metadata.Accounts():
+    args = ['--use_gce_service_account']
+  else:
+    args = ['--credential_file', json_path]
   if project:
     args += ['--project', project]
 
   bootstrapping.ExecutePythonTool(
-      'platform/bigquery', 'bq.py', *args)
+      'platform/bq', 'bq.py', *args)
 
 
 if __name__ == '__main__':
@@ -33,5 +38,6 @@ if __name__ == '__main__':
   }
   bootstrapping.CheckForBlacklistedCommand(sys.argv, blacklist,
                                            warn=True, die=True)
-  bootstrapping.PrerunChecks()
+  bootstrapping.CheckCredOrExit(can_be_gce=True)
+  bootstrapping.CheckUpdates('bq')
   main()

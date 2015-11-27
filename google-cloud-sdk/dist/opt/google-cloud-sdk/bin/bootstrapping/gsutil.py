@@ -10,8 +10,8 @@ import sys
 
 
 import bootstrapping
-from google.cloud.sdk.core import config
-from google.cloud.sdk.core.credentials import gce as c_gce
+from googlecloudsdk.core import config
+from googlecloudsdk.core.credentials import gce as c_gce
 
 
 def main():
@@ -29,24 +29,26 @@ def main():
     # on the end.
 
     if boto_config:
-      boto_path = ':'.join([boto_config, gsutil_path])
+      boto_path = os.pathsep.join([boto_config, gsutil_path])
     elif boto_path:
-      # this is ':' for windows as well, hardcoded into the boto source.
-      boto_path = ':'.join([boto_path, gsutil_path])
+      boto_path = os.pathsep.join([boto_path, gsutil_path])
     else:
       path_parts = ['/etc/boto.cfg',
                     os.path.expanduser(os.path.join('~', '.boto')),
                     gsutil_path]
-      boto_path = ':'.join(path_parts)
+      boto_path = os.pathsep.join(path_parts)
 
     if 'BOTO_CONFIG' in os.environ:
       del os.environ['BOTO_CONFIG']
     os.environ['BOTO_PATH'] = boto_path
 
+  args = []
+
   if project:
-    args = ['-o', 'GSUtil:default_project_id=%s' % project]
-  else:
-    args = []
+    args.extend(['-o', 'GSUtil:default_project_id=%s' % project])
+  if account in c_gce.Metadata().Accounts():
+    # Tell gsutil to look for GCE service accounts.
+    args.extend(['-o', 'GoogleCompute:service_account=default'])
 
   bootstrapping.ExecutePythonTool(
       'platform/gsutil', 'gsutil', *args)
@@ -62,5 +64,8 @@ if __name__ == '__main__':
 
   bootstrapping.CheckForBlacklistedCommand(sys.argv, blacklist, warn=True,
                                            die=True)
-  bootstrapping.PrerunChecks(can_be_gce=True)
+  # Don't call bootstrapping.PreRunChecks because anonymous access is
+  # supported for some endpoints. gsutil will output the appropriate
+  # error message upon receiving an authentication error.
+  bootstrapping.CheckUpdates('gsutil')
   main()

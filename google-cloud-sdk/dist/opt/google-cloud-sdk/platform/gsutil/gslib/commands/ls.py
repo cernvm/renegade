@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2011 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,44 +12,45 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Implementation of Unix-like ls command for cloud storage providers."""
+
+from __future__ import absolute_import
 
 import re
 
-from boto.s3.deletemarker import DeleteMarker
-from gslib.bucket_listing_ref import BucketListingRef
+from gslib.boto_translation import S3_DELETE_MARKER_GUID
+from gslib.cloud_api import NotFoundException
 from gslib.command import Command
-from gslib.command import COMMAND_NAME
-from gslib.command import COMMAND_NAME_ALIASES
-from gslib.command import FILE_URIS_OK
-from gslib.command import MAX_ARGS
-from gslib.command import MIN_ARGS
-from gslib.command import PROVIDER_URIS_OK
-from gslib.command import SUPPORTED_SUB_ARGS
-from gslib.command import URIS_START_ARG
+from gslib.command_argument import CommandArgument
+from gslib.cs_api_map import ApiSelector
 from gslib.exception import CommandException
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
-from gslib.plurality_checkable_iterator import PluralityCheckableIterator
+from gslib.ls_helper import LsHelper
+from gslib.storage_url import ContainsWildcard
+from gslib.storage_url import StorageUrlFromString
+from gslib.translation_helper import AclTranslation
 from gslib.util import ListingStyle
 from gslib.util import MakeHumanReadable
-from gslib.util import PrintFullInfoAboutUri
 from gslib.util import NO_MAX
-from gslib.wildcard_iterator import ContainsWildcard
-import boto
+from gslib.util import PrintFullInfoAboutObject
+from gslib.util import UTF8
 
-TIMESTAMP_RE = re.compile(r'(.*)\.[0-9]*Z')
 
-_detailed_help_text = ("""
+# Regex that assists with converting JSON timestamp to ls-style output.
+# This excludes timestamp fractional seconds, for example:
+# 2013-07-03 20:32:53.048000+00:00
+JSON_TIMESTAMP_RE = re.compile(r'([^\s]*)\s([^\.\+]*).*')
+
+_SYNOPSIS = """
+  gsutil ls [-a] [-b] [-l] [-L] [-r] [-p proj_id] url...
+"""
+
+_DETAILED_HELP_TEXT = ("""
 <B>SYNOPSIS</B>
-  gsutil ls [-a] [-b] [-l] [-L] [-R] [-p proj_id] uri...
+""" + _SYNOPSIS + """
 
 
 <B>LISTING PROVIDERS, BUCKETS, SUBDIRECTORIES, AND OBJECTS</B>
-  If you run gsutil ls without URIs, it lists all of the Google Cloud Storage
+  If you run gsutil ls without URLs, it lists all of the Google Cloud Storage
   buckets under your default project ID:
 
     gsutil ls
@@ -56,12 +58,12 @@ _detailed_help_text = ("""
   (For details about projects, see "gsutil help projects" and also the -p
   option in the OPTIONS section below.)
 
-  If you specify one or more provider URIs, gsutil ls will list buckets at
+  If you specify one or more provider URLs, gsutil ls will list buckets at
   each listed provider:
 
     gsutil ls gs://
 
-  If you specify bucket URIs, gsutil ls will list objects at the top level of
+  If you specify bucket URLs, gsutil ls will list objects at the top level of
   each bucket, along with the names of each subdirectory. For example:
 
     gsutil ls gs://bucket
@@ -73,12 +75,12 @@ _detailed_help_text = ("""
     gs://bucket/images1/
     gs://bucket/images2/
 
-  The "/" at the end of the last 2 URIs tells you they are subdirectories,
+  The "/" at the end of the last 2 URLs tells you they are subdirectories,
   which you can list using:
 
     gsutil ls gs://bucket/images*
 
-  If you specify object URIs, gsutil ls will list the specified objects. For
+  If you specify object URLs, gsutil ls will list the specified objects. For
   example:
 
     gsutil ls gs://bucket/*.txt
@@ -92,9 +94,9 @@ _detailed_help_text = ("""
 <B>DIRECTORY BY DIRECTORY, FLAT, and RECURSIVE LISTINGS</B>
   Listing a bucket or subdirectory (as illustrated near the end of the previous
   section) only shows the objects and names of subdirectories it contains. You
-  can list all objects in a bucket by using the -R option. For example:
+  can list all objects in a bucket by using the -r option. For example:
 
-    gsutil ls -R gs://bucket
+    gsutil ls -r gs://bucket
 
   will list the top-level objects and buckets, then the objects and
   buckets under gs://bucket/images1, then those under gs://bucket/images2, etc.
@@ -102,11 +104,11 @@ _detailed_help_text = ("""
   If you want to see all objects in the bucket in one "flat" listing use the
   recursive ("**") wildcard, like:
 
-    gsutil ls -R gs://bucket/**
+    gsutil ls -r gs://bucket/**
 
   or, for a flat listing of a subdirectory:
 
-    gsutil ls -R gs://bucket/dir/**
+    gsutil ls -r gs://bucket/dir/**
 
 
 <B>LISTING OBJECT DETAILS</B>
@@ -120,7 +122,7 @@ _detailed_help_text = ("""
 
        2276224  2012-03-02T19:25:17Z  gs://bucket/obj1
        3914624  2012-03-02T19:30:27Z  gs://bucket/obj2
-    TOTAL: 2 objects, 6190848 bytes (5.9 MB)
+    TOTAL: 2 objects, 6190848 bytes (5.9 MiB)
 
   Note that the total listed in parentheses above is in mebibytes (or gibibytes,
   tebibytes, etc.), which corresponds to the unit of billing measurement for
@@ -146,13 +148,15 @@ _detailed_help_text = ("""
             ETag:               5ca6796417570a586723b7344afffc81
             Generation:         1378862725952000
             Metageneration:     1
-            ACL:        <Owner:00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70, <<UserById: 00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70>: u'FULL_CONTROL'>>
-    TOTAL: 1 objects, 2276224 bytes (2.17 MB)
-
-  Note that the -L option is slower and more costly to use than the -l option,
-  because it makes a bucket listing request followed by a HEAD request for
-  each individual object (rather than just parsing the information it needs
-  out of a single bucket listing, the way the -l option does).
+            ACL:
+    [
+      {
+        "entity": "group-00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70",
+        "entityId": "00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70",
+        "role": "OWNER"
+      }
+    ]
+    TOTAL: 1 objects, 2276224 bytes (2.17 MiB)
 
   See also "gsutil help acl" for getting a more readable version of the ACL.
 
@@ -166,26 +170,43 @@ _detailed_help_text = ("""
   will print something like:
 
     gs://bucket/ :
-            StorageClass:           STANDARD
-            LocationConstraint:     US
-            Versioning enabled:     True
-            Logging:                False
-            WebsiteConfiguration:   False
-            ACL:                    <Owner:00b4903a9740e42c29800f53bd5a9a62a2f96eb3f64a4313a115df3f3a776bf7, <<GroupById: 00b4903a9740e42c29800f53bd5a9a62a2f96eb3f64a4313a115df3f3a776bf7>: u'FULL_CONTROL'>>
-            Default ACL:            <>
+            StorageClass:                 STANDARD
+            LocationConstraint:           US
+            Versioning enabled:           True
+            Logging:                      None
+            WebsiteConfiguration:         None
+            CORS configuration:           Present
+            Lifecycle configuration:      None
+    [
+      {
+        "entity": "group-00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70",
+        "entityId": "00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70",
+        "role": "OWNER"
+      }
+    ]
+            Default ACL:
+    [
+      {
+        "entity": "group-00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70",
+        "entityId": "00b4903a97163d99003117abe64d292561d2b4074fc90ce5c0e35ac45f66ad70",
+        "role": "OWNER"
+      }
+    ]
 
 
 <B>OPTIONS</B>
   -l          Prints long listing (owner, length).
 
-  -L          Prints even more detail than -l. This is a separate option because
-              it makes additional service requests (so, takes longer and adds
-              requests costs).
+  -L          Prints even more detail than -l.  Note: If you use this option
+              with the (non-default) XML API it will generate an additional
+              request per object being listed, which makes the -L option run
+              much more slowly (and cost more) using the XML API than the
+              default JSON API.
 
-  -b          Prints info about the bucket when used with a bucket URI.
+  -b          Prints info about the bucket when used with a bucket URL.
 
   -h          When used with -l, prints object sizes in human readable format
-              (e.g., 1KB, 234MB, 2GB, etc.)
+              (e.g., 1 KiB, 234 MiB, 2 GiB, etc.)
 
   -p proj_id  Specifies the project ID to use for listing buckets.
 
@@ -198,83 +219,81 @@ _detailed_help_text = ("""
   -e          Include ETag in long listing (-l) output.
 """)
 
+
 class LsCommand(Command):
   """Implementation of gsutil ls command."""
 
-  # Command specification (processed by parent class).
-  command_spec = {
-    # Name of command.
-    COMMAND_NAME : 'ls',
-    # List of command name aliases.
-    COMMAND_NAME_ALIASES : ['dir', 'list'],
-    # Min number of args required by this command.
-    MIN_ARGS : 0,
-    # Max number of args required by this command, or NO_MAX.
-    MAX_ARGS : NO_MAX,
-    # Getopt-style string specifying acceptable sub args.
-    SUPPORTED_SUB_ARGS : 'aeblLhp:rR',
-    # True if file URIs acceptable for this command.
-    FILE_URIS_OK : False,
-    # True if provider-only URIs acceptable for this command.
-    PROVIDER_URIS_OK : True,
-    # Index in args of first URI arg.
-    URIS_START_ARG : 0,
-  }
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'ls',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['dir', 'list'],
-    # Type of help:
-    HELP_TYPE : HelpType.COMMAND_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'List providers, buckets, or objects',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Command specification. See base class for documentation.
+  command_spec = Command.CreateCommandSpec(
+      'ls',
+      command_name_aliases=['dir', 'list'],
+      usage_synopsis=_SYNOPSIS,
+      min_args=0,
+      max_args=NO_MAX,
+      supported_sub_args='aeblLhp:rR',
+      file_url_ok=False,
+      provider_url_ok=True,
+      urls_start_arg=0,
+      gs_api_support=[ApiSelector.XML, ApiSelector.JSON],
+      gs_default_api=ApiSelector.JSON,
+      argparse_arguments=[
+          CommandArgument.MakeZeroOrMoreCloudURLsArgument()
+      ]
+  )
+  # Help specification. See help_provider.py for documentation.
+  help_spec = Command.HelpSpec(
+      help_name='ls',
+      help_name_aliases=['dir', 'list'],
+      help_type='command_help',
+      help_one_line_summary='List providers, buckets, or objects',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )
 
-  def _PrintBucketInfo(self, bucket_uri, listing_style):
+  def _PrintBucketInfo(self, bucket_blr, listing_style):
     """Print listing info for given bucket.
 
     Args:
-      bucket_uri: StorageUri being listed.
+      bucket_blr: BucketListingReference for the bucket being listed
       listing_style: ListingStyle enum describing type of output desired.
+
+    Returns:
+      Tuple (total objects, total bytes) in the bucket.
     """
     if (listing_style == ListingStyle.SHORT or
         listing_style == ListingStyle.LONG):
-      print bucket_uri
+      print bucket_blr
       return
+    # listing_style == ListingStyle.LONG_LONG:
+    # We're guaranteed by the caller that the root object is populated.
+    bucket = bucket_blr.root_object
+    location_constraint = bucket.location
+    storage_class = bucket.storageClass
+    fields = {'bucket': bucket_blr.url_string,
+              'storage_class': storage_class,
+              'location_constraint': location_constraint,
+              'acl': AclTranslation.JsonFromMessage(bucket.acl),
+              'default_acl': AclTranslation.JsonFromMessage(
+                  bucket.defaultObjectAcl)}
 
-    location_constraint = bucket_uri.get_location(validate=False,
-                                                  headers=self.headers)
-    storage_class = bucket_uri.get_storage_class(validate=False,
-                                                 headers=self.headers)
-    self.proj_id_handler.FillInProjectHeaderIfNeeded(
-        'get_acl', bucket_uri, self.headers)
-    fields = {
-        'bucket': bucket_uri,
-        'storage_class': storage_class,
-        'location_constraint': location_constraint or 'None',
-        'versioning': bucket_uri.get_versioning_config(self.headers),
-        'acl': bucket_uri.get_acl(False, self.headers),
-        'default_acl': bucket_uri.get_def_acl(False, self.headers),
-    }
-    # For other configuration fields, just show them as "Present/None".
-    # website_config is a dictionary of {"WebsiteConfiguration": config}
-    website_config = bucket_uri.get_website_config(self.headers)
-    fields["website_config"] = (
-        "Present" if website_config["WebsiteConfiguration"] else "None")
-    # logging_config is a dictionary of {"Logging": config}
-    logging_config = bucket_uri.get_logging_config(self.headers)
-    fields["logging_config"] = (
-        "Present" if logging_config["Logging"] else "None")
-    # cors_config wraps a list of cors
-    cors_config = bucket_uri.get_cors(self.headers)
-    fields["cors_config"] = "Present" if cors_config.cors else "None"
-    # lifecycle_config is a list itself
-    lifecycle_config = bucket_uri.get_lifecycle_config(self.headers)
-    fields["lifecycle_config"] = (
-        "Present" if lifecycle_config else "None")
+    fields['versioning'] = bucket.versioning and bucket.versioning.enabled
+    fields['website_config'] = 'Present' if bucket.website else 'None'
+    fields['logging_config'] = 'Present' if bucket.logging else 'None'
+    fields['cors_config'] = 'Present' if bucket.cors else 'None'
+    fields['lifecycle_config'] = 'Present' if bucket.lifecycle else 'None'
+
+    # For field values that are multiline, add indenting to make it look
+    # prettier.
+    for key in fields:
+      previous_value = fields[key]
+      if (not isinstance(previous_value, basestring) or
+          '\n' not in previous_value):
+        continue
+      new_value = previous_value.replace('\n', '\n\t  ')
+      # Start multiline values on a new line if they aren't already.
+      if not new_value.startswith('\n'):
+        new_value = '\n\t  ' + new_value
+      fields[key] = new_value
 
     print('{bucket} :\n'
           '\tStorage class:\t\t\t{storage_class}\n'
@@ -286,148 +305,53 @@ class LsCommand(Command):
           '\tLifecycle configuration:\t{lifecycle_config}\n'
           '\tACL:\t\t\t\t{acl}\n'
           '\tDefault ACL:\t\t\t{default_acl}'.format(**fields))
+    if bucket_blr.storage_url.scheme == 's3':
+      print('Note: this is an S3 bucket so configuration values may be '
+            'blank. To retrieve bucket configuration values, use '
+            'individual configuration commands such as gsutil acl get '
+            '<bucket>.')
 
-  def _PrintInfoAboutBucketListingRef(self, bucket_listing_ref, listing_style):
-    """Print listing info for given bucket_listing_ref.
-
-    Args:
-      bucket_listing_ref: BucketListing being listed.
-      listing_style: ListingStyle enum describing type of output desired.
-
-    Returns:
-      Tuple (number of objects,
-             object length, if listing_style is one of the long listing formats)
-
-    Raises:
-      Exception: if calling bug encountered.
-    """
-    uri = bucket_listing_ref.GetUri()
-    obj = bucket_listing_ref.GetKey()
-    uri_str = UriStrForObj(uri, obj, self.all_versions)
-    if listing_style == ListingStyle.SHORT:
-      print uri_str.encode('utf-8')
-      return (1, 0)
-    elif listing_style == ListingStyle.LONG:
-      # Exclude timestamp fractional secs (example: 2010-08-23T12:46:54.187Z).
-      timestamp = TIMESTAMP_RE.sub(
-          r'\1Z', obj.last_modified.decode('utf8').encode('ascii'))
-
-      if isinstance(obj, DeleteMarker):
-        size_string = '0'
-        numbytes = 0
-        numobjs = 0
-      else:
-        size_string = (MakeHumanReadable(obj.size)
-                       if self.human_readable else str(obj.size))
-        numbytes = obj.size
-        numobjs = 1
-
-      printstr = '%(size)10s  %(timestamp)s  %(uri)s'
-      if self.all_versions and hasattr(obj, 'metageneration'):
-        printstr += '  metageneration=%(metageneration)s'
-      if self.include_etag:
-        printstr += '  etag=%(etag)s'
-      format_args = {
-          'size': size_string,
-          'timestamp': timestamp,
-          'uri': uri_str.encode('utf-8'),
-          'metageneration': str(getattr(obj, 'metageneration', '')),
-          'etag': obj.etag.encode('utf-8'),
-      }
-      print printstr % format_args
-      return (numobjs, numbytes)
-    elif listing_style == ListingStyle.LONG_LONG:
-      return PrintFullInfoAboutUri(uri, True, self.headers)
+  def _PrintLongListing(self, bucket_listing_ref):
+    """Prints an object with ListingStyle.LONG."""
+    obj = bucket_listing_ref.root_object
+    url_str = bucket_listing_ref.url_string
+    if (obj.metadata and S3_DELETE_MARKER_GUID in
+        obj.metadata.additionalProperties):
+      size_string = '0'
+      num_bytes = 0
+      num_objs = 0
+      url_str += '<DeleteMarker>'
     else:
-      raise Exception('Unexpected ListingStyle(%s)' % listing_style)
+      size_string = (MakeHumanReadable(obj.size)
+                     if self.human_readable else str(obj.size))
+      num_bytes = obj.size
+      num_objs = 1
 
-  def _ExpandUriAndPrintInfo(self, uri, listing_style, should_recurse=False):
-    """
-    Expands wildcards and directories/buckets for uri as needed, and
-    calls _PrintInfoAboutBucketListingRef() on each.
-
-    Args:
-      uri: StorageUri being listed.
-      listing_style: ListingStyle enum describing type of output desired.
-      should_recurse: bool indicator of whether to expand recursively.
-
-    Returns:
-      Tuple (number of matching objects, number of bytes across these objects).
-    """
-    # We do a two-level loop, with the outer loop iterating level-by-level from
-    # blrs_to_expand, and the inner loop iterating the matches at the current
-    # level, printing them, and adding any new subdirs that need expanding to
-    # blrs_to_expand (to be picked up in the next outer loop iteration).
-    blrs_to_expand = [BucketListingRef(uri)]
-    num_objs = 0
-    num_bytes = 0
-    expanding_top_level = True
-    printed_one = False
-    num_expanded_blrs = 0
-    while len(blrs_to_expand):
-      if printed_one:
-        print
-      blr = blrs_to_expand.pop(0)
-      if blr.HasKey():
-        blr_iterator = iter([blr])
-      elif blr.HasPrefix():
-        # Bucket subdir from a previous iteration. Print "header" line only if
-        # we're listing more than one subdir (or if it's a recursive listing),
-        # to be consistent with the way UNIX ls works.
-        if num_expanded_blrs > 1 or should_recurse:
-          print '%s:' % blr.GetUriString().encode('utf-8')
-          printed_one = True
-        blr_iterator = self.WildcardIterator('%s/*' %
-                                             blr.GetRStrippedUriString(),
-                                             all_versions=self.all_versions)
-      elif blr.NamesBucket():
-        blr_iterator = self.WildcardIterator('%s*' % blr.GetUriString(),
-                                             all_versions=self.all_versions)
-      else:
-        # This BLR didn't come from a bucket listing. This case happens for
-        # BLR's instantiated from a user-provided URI.
-        blr_iterator = PluralityCheckableIterator(
-            UriOnlyBlrExpansionIterator(
-                self, blr, all_versions=self.all_versions))
-        if blr_iterator.is_empty() and not ContainsWildcard(uri):
-          raise CommandException('No such object %s' % uri)
-      for cur_blr in blr_iterator:
-        num_expanded_blrs = num_expanded_blrs + 1
-        if cur_blr.HasKey():
-          # Object listing.
-          (no, nb) = self._PrintInfoAboutBucketListingRef(
-              cur_blr, listing_style)
-          num_objs += no
-          num_bytes += nb
-          printed_one = True
-        else:
-          # Subdir listing. If we're at the top level of a bucket subdir
-          # listing don't print the list here (corresponding to how UNIX ls
-          # dir just prints its contents, not the name followed by its
-          # contents).
-          if (expanding_top_level and not uri.names_bucket()) or should_recurse:
-            if cur_blr.GetUriString().endswith('//'):
-              # Expand gs://bucket// into gs://bucket//* so we don't infinite
-              # loop. This case happens when user has uploaded an object whose
-              # name begins with a /.
-              cur_blr = BucketListingRef(self.suri_builder.StorageUri(
-                  '%s*' % cur_blr.GetUriString()), None, None, cur_blr.headers)
-            blrs_to_expand.append(cur_blr)
-          # Don't include the subdir name in the output if we're doing a
-          # recursive listing, as it will be printed as 'subdir:' when we get
-          # to the prefix expansion, the next iteration of the main loop.
-          else:
-            if listing_style == ListingStyle.LONG:
-              print '%-33s%s' % (
-                  '', cur_blr.GetUriString().encode('utf-8'))
-            else:
-              print cur_blr.GetUriString().encode('utf-8')
-      expanding_top_level = False
+    timestamp = JSON_TIMESTAMP_RE.sub(
+        r'\1T\2Z', str(obj.updated).decode(UTF8).encode('ascii'))
+    printstr = '%(size)10s  %(timestamp)s  %(url)s'
+    encoded_etag = None
+    encoded_metagen = None
+    if self.all_versions:
+      printstr += '  metageneration=%(metageneration)s'
+      encoded_metagen = str(obj.metageneration).encode(UTF8)
+    if self.include_etag:
+      printstr += '  etag=%(etag)s'
+      encoded_etag = obj.etag.encode(UTF8)
+    format_args = {
+        'size': size_string,
+        'timestamp': timestamp,
+        'url': url_str.encode(UTF8),
+        'metageneration': encoded_metagen,
+        'etag': encoded_etag
+    }
+    print printstr % format_args
     return (num_objs, num_bytes)
 
-  # Command entry point.
   def RunCommand(self):
+    """Command entry point for the ls command."""
     got_nomatch_errors = False
+    got_bucket_nomatch_errors = False
     listing_style = ListingStyle.SHORT
     get_bucket_info = False
     self.recursion_requested = False
@@ -449,7 +373,7 @@ class LsCommand(Command):
         elif o == '-L':
           listing_style = ListingStyle.LONG_LONG
         elif o == '-p':
-          self.proj_id_handler.SetProjectId(a)
+          self.project_id = a
         elif o == '-r' or o == '-R':
           self.recursion_requested = True
 
@@ -459,43 +383,89 @@ class LsCommand(Command):
 
     total_objs = 0
     total_bytes = 0
-    for uri_str in self.args:
-      uri = self.suri_builder.StorageUri(uri_str)
-      self.proj_id_handler.FillInProjectHeaderIfNeeded('ls', uri, self.headers)
 
-      if uri.names_provider():
-        # Provider URI: use bucket wildcard to list buckets.
-        for uri in self.WildcardIterator('%s://*' % uri.scheme).IterUris():
-          self._PrintBucketInfo(uri, listing_style)
-      elif uri.names_bucket():
-        # Bucket URI -> list the object(s) in that bucket.
-        if get_bucket_info:
-          # ls -b bucket listing request: List info about bucket(s).
+    def MaybePrintBucketHeader(blr):
+      if len(self.args) > 1:
+        print '%s:' % blr.url_string.encode(UTF8)
+    print_bucket_header = MaybePrintBucketHeader
 
-          if (listing_style != ListingStyle.LONG_LONG and
-              not ContainsWildcard(uri)):
-            # At this point, we haven't done any validation that the bucket URI
-            # actually exists. If the listing style is short, the
-            # _PrintBucketInfo doesn't do any RPCs, so check to make sure the
-            # bucket actually exists by fetching it.
-            uri.get_bucket(validate=True)
-
-          for uri in self.WildcardIterator(uri).IterUris():
-            self._PrintBucketInfo(uri, listing_style)
-        else:
-          # Not -b request: List objects in the bucket(s).
-          (no, nb) = self._ExpandUriAndPrintInfo(uri, listing_style,
-              should_recurse=self.recursion_requested)
-          if no == 0 and ContainsWildcard(uri):
-            got_nomatch_errors = True
-          total_objs += no
-          total_bytes += nb
+    for url_str in self.args:
+      storage_url = StorageUrlFromString(url_str)
+      if storage_url.IsFileUrl():
+        raise CommandException('Only cloud URLs are supported for %s'
+                               % self.command_name)
+      bucket_fields = None
+      if (listing_style == ListingStyle.SHORT or
+          listing_style == ListingStyle.LONG):
+        bucket_fields = ['id']
+      elif listing_style == ListingStyle.LONG_LONG:
+        bucket_fields = ['location', 'storageClass', 'versioning', 'acl',
+                         'defaultObjectAcl', 'website', 'logging', 'cors',
+                         'lifecycle']
+      if storage_url.IsProvider():
+        # Provider URL: use bucket wildcard to list buckets.
+        for blr in self.WildcardIterator(
+            '%s://*' % storage_url.scheme).IterBuckets(
+                bucket_fields=bucket_fields):
+          self._PrintBucketInfo(blr, listing_style)
+      elif storage_url.IsBucket() and get_bucket_info:
+        # ls -b bucket listing request: List info about bucket(s).
+        total_buckets = 0
+        for blr in self.WildcardIterator(url_str).IterBuckets(
+            bucket_fields=bucket_fields):
+          if not ContainsWildcard(url_str) and not blr.root_object:
+            # Iterator does not make an HTTP call for non-wildcarded
+            # listings with fields=='id'. Ensure the bucket exists by calling
+            # GetBucket.
+            self.gsutil_api.GetBucket(
+                blr.storage_url.bucket_name,
+                fields=['id'], provider=storage_url.scheme)
+          self._PrintBucketInfo(blr, listing_style)
+          total_buckets += 1
+        if not ContainsWildcard(url_str) and not total_buckets:
+          got_bucket_nomatch_errors = True
       else:
-        # URI names an object or object subdir -> list matching object(s) /
-        # subdirs.
-        (exp_objs, exp_bytes) = self._ExpandUriAndPrintInfo(uri, listing_style,
-            should_recurse=self.recursion_requested)
-        if exp_objs == 0 and ContainsWildcard(uri):
+        # URL names a bucket, object, or object subdir ->
+        # list matching object(s) / subdirs.
+        def _PrintPrefixLong(blr):
+          print '%-33s%s' % ('', blr.url_string.encode(UTF8))
+
+        if listing_style == ListingStyle.SHORT:
+          # ls helper by default readies us for a short listing.
+          ls_helper = LsHelper(self.WildcardIterator, self.logger,
+                               all_versions=self.all_versions,
+                               print_bucket_header_func=print_bucket_header,
+                               should_recurse=self.recursion_requested)
+        elif listing_style == ListingStyle.LONG:
+          bucket_listing_fields = ['name', 'updated', 'size']
+          if self.all_versions:
+            bucket_listing_fields.extend(['generation', 'metageneration'])
+          if self.include_etag:
+            bucket_listing_fields.append('etag')
+
+          ls_helper = LsHelper(self.WildcardIterator, self.logger,
+                               print_object_func=self._PrintLongListing,
+                               print_dir_func=_PrintPrefixLong,
+                               print_bucket_header_func=print_bucket_header,
+                               all_versions=self.all_versions,
+                               should_recurse=self.recursion_requested,
+                               fields=bucket_listing_fields)
+
+        elif listing_style == ListingStyle.LONG_LONG:
+          # List all fields
+          bucket_listing_fields = None
+          ls_helper = LsHelper(self.WildcardIterator, self.logger,
+                               print_object_func=PrintFullInfoAboutObject,
+                               print_dir_func=_PrintPrefixLong,
+                               print_bucket_header_func=print_bucket_header,
+                               all_versions=self.all_versions,
+                               should_recurse=self.recursion_requested,
+                               fields=bucket_listing_fields)
+        else:
+          raise CommandException('Unknown listing style: %s' % listing_style)
+
+        exp_dirs, exp_objs, exp_bytes = ls_helper.ExpandUrlAndPrint(storage_url)
+        if storage_url.IsObject() and exp_objs == 0 and exp_dirs == 0:
           got_nomatch_errors = True
         total_bytes += exp_bytes
         total_objs += exp_objs
@@ -504,85 +474,8 @@ class LsCommand(Command):
       print ('TOTAL: %d objects, %d bytes (%s)' %
              (total_objs, total_bytes, MakeHumanReadable(float(total_bytes))))
     if got_nomatch_errors:
-      raise CommandException('One or more URIs matched no objects.')
+      raise CommandException('One or more URLs matched no objects.')
+    if got_bucket_nomatch_errors:
+      raise NotFoundException('One or more bucket URLs matched no buckets.')
 
     return 0
-
-
-class UriOnlyBlrExpansionIterator:
-  """
-  Iterator that expands a BucketListingRef that contains only a URI (i.e.,
-  didn't come from a bucket listing), yielding BucketListingRefs to which it
-  expands. This case happens for BLR's instantiated from a user-provided URI.
-
-  Note that we can't use NameExpansionIterator here because it produces an
-  iteration over the full object names (e.g., expanding "gs://bucket" to
-  "gs://bucket/dir/o1" and "gs://bucket/dir/o2"), while for the ls command
-  we need also to see the intermediate directories (like "gs://bucket/dir").
-  """
-  def __init__(self, command_instance, blr, all_versions=False):
-    self.command_instance = command_instance
-    self.blr = blr
-    self.all_versions=all_versions
-
-  def __iter__(self):
-    """
-    Args:
-      command_instance: calling instance of Command class.
-      blr: BucketListingRef to expand.
-
-    Yields:
-      List of BucketListingRef to which it expands.
-    """
-    # Do a delimited wildcard expansion so we get any matches along with
-    # whether they are keys or prefixes. That way if bucket contains a key
-    # 'abcd' and another key 'abce/x.txt' the expansion will return two BLRs,
-    # the first with HasKey()=True and the second with HasPrefix()=True.
-    rstripped_versionless_uri_str = self.blr.GetRStrippedUriString()
-    if ContainsWildcard(rstripped_versionless_uri_str):
-      for blr in self.command_instance.WildcardIterator(
-          rstripped_versionless_uri_str, all_versions=self.all_versions):
-        yield blr
-      return
-    # Build a wildcard to expand so CloudWildcardIterator will not just treat it
-    # as a key and yield the result without doing a bucket listing.
-    for blr in self.command_instance.WildcardIterator(
-        rstripped_versionless_uri_str + '*', all_versions=self.all_versions):
-      # Find the originally specified BucketListingRef in the expanded list (if
-      # present). Don't just use the expanded list, because it would also
-      # include objects whose name prefix matches the blr name (because of the
-      # wildcard match we did above).  Note that there can be multiple matches,
-      # for the case where there's both an object and a subdirectory with the
-      # same name.
-      if (blr.GetRStrippedUriString()
-          == rstripped_versionless_uri_str):
-        yield blr
-
-
-def UriStrForObj(uri, obj, all_versions):
-  """Constructs a URI string for the given object.
-
-  For example if we were iterating gs://*, obj could be an object in one
-  of the user's buckets enumerated by the ls command.
-
-  Args:
-    uri: base StorageUri being iterated.
-    obj: object (Key) being listed.
-    all_versions: Whether or not to include versioning.
-
-  Returns:
-    URI string.
-  """
-  version_info = ''
-  if all_versions:
-    if uri.get_provider().name == 'google' and obj.generation:
-      version_info = '#%s' % obj.generation
-    elif uri.get_provider().name == 'aws' and obj.version_id:
-      if isinstance(obj, DeleteMarker):
-        version_info = '#<DeleteMarker>' + str(obj.version_id)
-      else:
-        version_info = '#' + str(obj.version_id)
-    else:
-      version_info = ''
-  return '%s://%s/%s%s' % (uri.scheme, obj.bucket.name, obj.name,
-                           version_info)

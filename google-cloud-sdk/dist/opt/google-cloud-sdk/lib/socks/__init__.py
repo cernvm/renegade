@@ -40,10 +40,13 @@ mainly to merge bug fixes found in Sourceforge
 
 """
 
-
+import base64
 import socket
 import struct
 import sys
+
+if getattr(socket, 'socket', None) is None:
+    raise ImportError('socket.socket missing, proxy support unusable')
 
 PROXY_TYPE_SOCKS4 = 1
 PROXY_TYPE_SOCKS5 = 2
@@ -173,11 +176,16 @@ class socksocket(socket.socket):
             hdrs.remove(endpt)
             host = host.split(" ")[1]
             endpt = endpt.split(" ")
+            if (self.__proxy[4] != None and self.__proxy[5] != None):
+                hdrs.insert(0, self.__getauthheader())
             hdrs.insert(0, "Host: %s" % host)
             hdrs.insert(0, "%s http://%s%s %s" % (endpt[0], host, endpt[1],
                                                   endpt[2]))
-            return "\r\n".join(hdrs)
-        return header
+        return "\r\n".join(hdrs)
+
+    def __getauthheader(self):
+        auth = self.__proxy[4] + ":" + self.__proxy[5]
+        return "Proxy-Authorization: Basic " + base64.b64encode(auth)
 
     def setproxy(self, proxytype=None, addr=None, port=None, rdns=True,
                  username=None, password=None):
@@ -372,9 +380,12 @@ class socksocket(socket.socket):
             addr = socket.gethostbyname(destaddr)
         else:
             addr = destaddr
-        self.sendall(("CONNECT " + addr + ":" + str(destport) +
-                      " HTTP/1.1\r\n" + "Host: " + destaddr +
-                      "\r\n\r\n").encode())
+        headers =  ["CONNECT ", addr, ":", str(destport), " HTTP/1.1\r\n"]
+        headers += ["Host: ", destaddr, "\r\n"]
+        if (self.__proxy[4] != None and self.__proxy[5] != None):
+                headers += [self.__getauthheader(), "\r\n"]
+        headers.append("\r\n")
+        self.sendall("".join(headers).encode())
         # We read the response until we get the string "\r\n\r\n"
         resp = self.recv(1)
         while resp.find("\r\n\r\n".encode()) == -1:

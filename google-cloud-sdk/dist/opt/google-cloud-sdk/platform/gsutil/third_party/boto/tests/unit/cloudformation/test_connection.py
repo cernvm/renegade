@@ -1,17 +1,12 @@
 #!/usr/bin/env python
 import unittest
-import httplib
 from datetime import datetime
-try:
-    import json
-except ImportError:
-    import simplejson as json
-
 from mock import Mock
 
 from tests.unit import AWSMockServiceTestCase
 from boto.cloudformation.connection import CloudFormationConnection
-
+from boto.exception import BotoServerError
+from boto.compat import json
 
 SAMPLE_TEMPLATE = r"""
 {
@@ -54,7 +49,7 @@ class TestCloudFormationCreateStack(CloudFormationConnectionBase):
         return json.dumps(
             {u'CreateStackResponse':
                  {u'CreateStackResult': {u'StackId': self.stack_id},
-                  u'ResponseMetadata': {u'RequestId': u'1'}}})
+                  u'ResponseMetadata': {u'RequestId': u'1'}}}).encode('utf-8')
 
     def test_create_stack_has_correct_request_params(self):
         self.set_http_response(status_code=200)
@@ -108,30 +103,45 @@ class TestCloudFormationCreateStack(CloudFormationConnectionBase):
 
     def test_create_stack_fails(self):
         self.set_http_response(status_code=400, reason='Bad Request',
-                               body='Invalid arg.')
-        with self.assertRaises(self.service_connection.ResponseError):
+            body=b'{"Error": {"Code": 1, "Message": "Invalid arg."}}')
+        with self.assertRaisesRegexp(self.service_connection.ResponseError,
+            'Invalid arg.'):
             api_response = self.service_connection.create_stack(
                 'stack_name', template_body=SAMPLE_TEMPLATE,
                 parameters=[('KeyName', 'myKeyName')])
 
+    def test_create_stack_fail_error(self):
+        self.set_http_response(status_code=400, reason='Bad Request',
+            body=b'{"RequestId": "abc", "Error": {"Code": 1, "Message": "Invalid arg."}}')
+        try:
+            api_response = self.service_connection.create_stack(
+                'stack_name', template_body=SAMPLE_TEMPLATE,
+                parameters=[('KeyName', 'myKeyName')])
+        except BotoServerError as e:
+            self.assertEqual('abc', e.request_id)
+            self.assertEqual(1, e.error_code)
+            self.assertEqual('Invalid arg.', e.message)
 
 class TestCloudFormationUpdateStack(CloudFormationConnectionBase):
     def default_body(self):
         return json.dumps(
             {u'UpdateStackResponse':
                  {u'UpdateStackResult': {u'StackId': self.stack_id},
-                  u'ResponseMetadata': {u'RequestId': u'1'}}})
+                  u'ResponseMetadata': {u'RequestId': u'1'}}}).encode('utf-8')
 
     def test_update_stack_all_args(self):
         self.set_http_response(status_code=200)
         api_response = self.service_connection.update_stack(
             'stack_name', template_url='http://url',
             template_body=SAMPLE_TEMPLATE,
-            parameters=[('KeyName', 'myKeyName')],
+            parameters=[('KeyName', 'myKeyName'), ('KeyName2', "", True),
+                        ('KeyName3', "", False), ('KeyName4', None, True),
+                        ('KeyName5', "Ignore Me", True)],
             tags={'TagKey': 'TagValue'},
             notification_arns=['arn:notify1', 'arn:notify2'],
             disable_rollback=True,
-            timeout_in_minutes=20
+            timeout_in_minutes=20,
+            use_previous_template=True
         )
         self.assert_request_parameters({
             'Action': 'UpdateStack',
@@ -141,6 +151,14 @@ class TestCloudFormationUpdateStack(CloudFormationConnectionBase):
             'NotificationARNs.member.2': 'arn:notify2',
             'Parameters.member.1.ParameterKey': 'KeyName',
             'Parameters.member.1.ParameterValue': 'myKeyName',
+            'Parameters.member.2.ParameterKey': 'KeyName2',
+            'Parameters.member.2.UsePreviousValue': 'true',
+            'Parameters.member.3.ParameterKey': 'KeyName3',
+            'Parameters.member.3.ParameterValue': '',
+            'Parameters.member.4.UsePreviousValue': 'true',
+            'Parameters.member.4.ParameterKey': 'KeyName4',
+            'Parameters.member.5.UsePreviousValue': 'true',
+            'Parameters.member.5.ParameterKey': 'KeyName5',
             'Tags.member.1.Key': 'TagKey',
             'Tags.member.1.Value': 'TagValue',
             'StackName': 'stack_name',
@@ -148,6 +166,7 @@ class TestCloudFormationUpdateStack(CloudFormationConnectionBase):
             'TimeoutInMinutes': 20,
             'TemplateBody': SAMPLE_TEMPLATE,
             'TemplateURL': 'http://url',
+            'UsePreviousTemplate': 'true',
         })
 
     def test_update_stack_with_minimum_args(self):
@@ -164,7 +183,7 @@ class TestCloudFormationUpdateStack(CloudFormationConnectionBase):
 
     def test_update_stack_fails(self):
         self.set_http_response(status_code=400, reason='Bad Request',
-                               body='Invalid arg.')
+                               body=b'Invalid arg.')
         with self.assertRaises(self.service_connection.ResponseError):
             api_response = self.service_connection.update_stack(
                 'stack_name', template_body=SAMPLE_TEMPLATE,
@@ -175,12 +194,12 @@ class TestCloudFormationDeleteStack(CloudFormationConnectionBase):
     def default_body(self):
         return json.dumps(
             {u'DeleteStackResponse':
-                 {u'ResponseMetadata': {u'RequestId': u'1'}}})
+                 {u'ResponseMetadata': {u'RequestId': u'1'}}}).encode('utf-8')
 
     def test_delete_stack(self):
         self.set_http_response(status_code=200)
         api_response = self.service_connection.delete_stack('stack_name')
-        self.assertEqual(api_response, json.loads(self.default_body()))
+        self.assertEqual(api_response, json.loads(self.default_body().decode('utf-8')))
         self.assert_request_parameters({
             'Action': 'DeleteStack',
             'ContentType': 'JSON',
@@ -196,7 +215,7 @@ class TestCloudFormationDeleteStack(CloudFormationConnectionBase):
 
 class TestCloudFormationDescribeStackResource(CloudFormationConnectionBase):
     def default_body(self):
-        return json.dumps('fake server response')
+        return json.dumps('fake server response').encode('utf-8')
 
     def test_describe_stack_resource(self):
         self.set_http_response(status_code=200)
@@ -220,7 +239,7 @@ class TestCloudFormationDescribeStackResource(CloudFormationConnectionBase):
 
 class TestCloudFormationGetTemplate(CloudFormationConnectionBase):
     def default_body(self):
-        return json.dumps('fake server response')
+        return json.dumps('fake server response').encode('utf-8')
 
     def test_get_template(self):
         self.set_http_response(status_code=200)
@@ -242,7 +261,7 @@ class TestCloudFormationGetTemplate(CloudFormationConnectionBase):
 
 class TestCloudFormationGetStackevents(CloudFormationConnectionBase):
     def default_body(self):
-        return """
+        return b"""
             <DescribeStackEventsResult>
               <StackEvents>
                 <member>
@@ -305,7 +324,7 @@ class TestCloudFormationGetStackevents(CloudFormationConnectionBase):
 
 class TestCloudFormationDescribeStackResources(CloudFormationConnectionBase):
     def default_body(self):
-        return """
+        return b"""
             <DescribeStackResourcesResult>
               <StackResources>
                 <member>
@@ -365,7 +384,7 @@ class TestCloudFormationDescribeStackResources(CloudFormationConnectionBase):
 
 class TestCloudFormationDescribeStacks(CloudFormationConnectionBase):
     def default_body(self):
-        return """
+        return b"""
           <DescribeStacksResponse>
             <DescribeStacksResult>
               <Stacks>
@@ -455,7 +474,7 @@ class TestCloudFormationDescribeStacks(CloudFormationConnectionBase):
 
 class TestCloudFormationListStackResources(CloudFormationConnectionBase):
     def default_body(self):
-        return """
+        return b"""
             <ListStackResourcesResponse>
               <ListStackResourcesResult>
                 <StackResourceSummaries>
@@ -512,7 +531,7 @@ class TestCloudFormationListStackResources(CloudFormationConnectionBase):
 
 class TestCloudFormationListStacks(CloudFormationConnectionBase):
     def default_body(self):
-        return """
+        return b"""
             <ListStacksResponse>
              <ListStacksResult>
               <StackSummaries>
@@ -552,7 +571,7 @@ class TestCloudFormationListStacks(CloudFormationConnectionBase):
 
 class TestCloudFormationValidateTemplate(CloudFormationConnectionBase):
     def default_body(self):
-        return """
+        return b"""
             <ValidateTemplateResponse xmlns="http://cloudformation.amazonaws.com/doc/2010-05-15/">
               <ValidateTemplateResult>
                 <Description>My Description.</Description>
@@ -569,6 +588,10 @@ class TestCloudFormationValidateTemplate(CloudFormationConnectionBase):
                     <Description>EC2 KeyPair</Description>
                   </member>
                 </Parameters>
+                <CapabilitiesReason>Reason</CapabilitiesReason>
+                <Capabilities>
+                  <member>CAPABILITY_IAM</member>
+                </Capabilities>
               </ValidateTemplateResult>
               <ResponseMetadata>
                 <RequestId>0be7b6e8-e4a0-11e0-a5bd-9f8d5a7dbc91</RequestId>
@@ -593,6 +616,11 @@ class TestCloudFormationValidateTemplate(CloudFormationConnectionBase):
         self.assertEqual(param2.no_echo, True)
         self.assertEqual(param2.parameter_key, 'KeyName')
 
+        self.assertEqual(template.capabilities_reason, 'Reason')
+
+        self.assertEqual(len(template.capabilities), 1)
+        self.assertEqual(template.capabilities[0].value, 'CAPABILITY_IAM')
+
         self.assert_request_parameters({
             'Action': 'ValidateTemplate',
             'TemplateBody': SAMPLE_TEMPLATE,
@@ -603,7 +631,7 @@ class TestCloudFormationValidateTemplate(CloudFormationConnectionBase):
 
 class TestCloudFormationCancelUpdateStack(CloudFormationConnectionBase):
     def default_body(self):
-        return """<CancelUpdateStackResult/>"""
+        return b"""<CancelUpdateStackResult/>"""
 
     def test_cancel_update_stack(self):
         self.set_http_response(status_code=200)
@@ -612,6 +640,82 @@ class TestCloudFormationCancelUpdateStack(CloudFormationConnectionBase):
         self.assert_request_parameters({
             'Action': 'CancelUpdateStack',
             'StackName': 'stack_name',
+            'Version': '2010-05-15',
+        })
+
+
+class TestCloudFormationEstimateTemplateCost(CloudFormationConnectionBase):
+    def default_body(self):
+        return b"""
+            {
+                "EstimateTemplateCostResponse": {
+                    "EstimateTemplateCostResult": {
+                        "Url": "http://calculator.s3.amazonaws.com/calc5.html?key=cf-2e351785-e821-450c-9d58-625e1e1ebfb6"
+                    }
+                }
+            }
+        """
+
+    def test_estimate_template_cost(self):
+        self.set_http_response(status_code=200)
+        api_response = self.service_connection.estimate_template_cost(
+            template_body='{}')
+        self.assertEqual(api_response,
+            'http://calculator.s3.amazonaws.com/calc5.html?key=cf-2e351785-e821-450c-9d58-625e1e1ebfb6')
+        self.assert_request_parameters({
+            'Action': 'EstimateTemplateCost',
+            'ContentType': 'JSON',
+            'TemplateBody': '{}',
+            'Version': '2010-05-15',
+        })
+
+
+class TestCloudFormationGetStackPolicy(CloudFormationConnectionBase):
+    def default_body(self):
+        return b"""
+            {
+                "GetStackPolicyResponse": {
+                    "GetStackPolicyResult": {
+                        "StackPolicyBody": "{...}"
+                    }
+                }
+            }
+        """
+
+    def test_get_stack_policy(self):
+        self.set_http_response(status_code=200)
+        api_response = self.service_connection.get_stack_policy('stack-id')
+        self.assertEqual(api_response, '{...}')
+        self.assert_request_parameters({
+            'Action': 'GetStackPolicy',
+            'ContentType': 'JSON',
+            'StackName': 'stack-id',
+            'Version': '2010-05-15',
+        })
+
+
+class TestCloudFormationSetStackPolicy(CloudFormationConnectionBase):
+    def default_body(self):
+        return b"""
+            {
+                "SetStackPolicyResponse": {
+                    "SetStackPolicyResult": {
+                        "Some": "content"
+                    }
+                }
+            }
+        """
+
+    def test_set_stack_policy(self):
+        self.set_http_response(status_code=200)
+        api_response = self.service_connection.set_stack_policy('stack-id',
+            stack_policy_body='{}')
+        self.assertDictEqual(api_response, {'SetStackPolicyResult': {'Some': 'content'}})
+        self.assert_request_parameters({
+            'Action': 'SetStackPolicy',
+            'ContentType': 'JSON',
+            'StackName': 'stack-id',
+            'StackPolicyBody': '{}',
             'Version': '2010-05-15',
         })
 

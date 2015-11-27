@@ -48,15 +48,18 @@ class SNSConnection(AWSQueryConnection):
     requests, and handling error responses. For a list of available
     SDKs, go to `Tools for Amazon Web Services`_.
     """
-    DefaultRegionName = 'us-east-1'
-    DefaultRegionEndpoint = 'sns.us-east-1.amazonaws.com'
-    APIVersion = '2010-03-31'
+    DefaultRegionName = boto.config.get('Boto', 'sns_region_name', 'us-east-1')
+    DefaultRegionEndpoint = boto.config.get('Boto', 'sns_region_endpoint', 
+                                            'sns.us-east-1.amazonaws.com')
+    APIVersion = boto.config.get('Boto', 'sns_version', '2010-03-31')
+
 
     def __init__(self, aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=True, port=None, proxy=None, proxy_port=None,
                  proxy_user=None, proxy_pass=None, debug=0,
                  https_connection_factory=None, region=None, path='/',
-                 security_token=None, validate_certs=True):
+                 security_token=None, validate_certs=True,
+                 profile_name=None):
         if not region:
             region = RegionInfo(self, self.DefaultRegionName,
                                 self.DefaultRegionEndpoint,
@@ -69,7 +72,8 @@ class SNSConnection(AWSQueryConnection):
                                     self.region.endpoint, debug,
                                     https_connection_factory, path,
                                     security_token=security_token,
-                                    validate_certs=validate_certs)
+                                    validate_certs=validate_certs,
+                                    profile_name=profile_name)
 
     def _build_dict_as_list_params(self, params, dictionary, name):
       """
@@ -92,7 +96,7 @@ class SNSConnection(AWSQueryConnection):
       :param name: name of the serialized parameter
       """
       items = sorted(dictionary.items(), key=lambda x:x[0])
-      for kv, index in zip(items, range(1, len(items)+1)):
+      for kv, index in zip(items, list(range(1, len(items)+1))):
         key, value = kv
         prefix = '%s.entry.%s' % (name, index)
         params['%s.key' % prefix] = key
@@ -210,7 +214,7 @@ class SNSConnection(AWSQueryConnection):
         return self._make_request('DeleteTopic', params, '/', 'GET')
 
     def publish(self, topic=None, message=None, subject=None, target_arn=None,
-                message_structure=None):
+                message_structure=None, message_attributes=None):
         """
         Get properties of a Topic
 
@@ -228,6 +232,23 @@ class SNSConnection(AWSQueryConnection):
                                   your message should be a JSON string that
                                   matches the structure described at
                                   http://docs.aws.amazon.com/sns/latest/dg/PublishTopic.html#sns-message-formatting-by-protocol
+
+        :type message_attributes: dict
+        :param message_attributes: Message attributes to set. Should be
+            of the form:
+
+            .. code-block:: python
+
+                {
+                    "name1": {
+                        "data_type": "Number",
+                        "string_value": "42"
+                    },
+                    "name2": {
+                        "data_type": "String",
+                        "string_value": "Bob"
+                    }
+                }
 
         :type subject: string
         :param subject: Optional parameter to be used as the "Subject"
@@ -252,6 +273,20 @@ class SNSConnection(AWSQueryConnection):
             params['TargetArn'] = target_arn
         if message_structure is not None:
             params['MessageStructure'] = message_structure
+        if message_attributes is not None:
+            keys = sorted(message_attributes.keys())
+            for i, name in enumerate(keys, start=1):
+                attribute = message_attributes[name]
+                params['MessageAttributes.entry.{0}.Name'.format(i)] = name
+                if 'data_type' in attribute:
+                    params['MessageAttributes.entry.{0}.Value.DataType'.format(i)] = \
+                        attribute['data_type']
+                if 'string_value' in attribute:
+                    params['MessageAttributes.entry.{0}.Value.StringValue'.format(i)] = \
+                        attribute['string_value']
+                if 'binary_value' in attribute:
+                    params['MessageAttributes.entry.{0}.Value.BinaryValue'.format(i)] = \
+                        attribute['binary_value']
         return self._make_request('Publish', params, '/', 'POST')
 
     def subscribe(self, topic, protocol, endpoint):
@@ -264,7 +299,7 @@ class SNSConnection(AWSQueryConnection):
         :type protocol: string
         :param protocol: The protocol used to communicate with
                          the subscriber.  Current choices are:
-                         email|email-json|http|https|sqs|sms
+                         email|email-json|http|https|sqs|sms|application
 
         :type endpoint: string
         :param endpoint: The location of the endpoint for
@@ -274,7 +309,10 @@ class SNSConnection(AWSQueryConnection):
                          * For http, this would be a URL beginning with http
                          * For https, this would be a URL beginning with https
                          * For sqs, this would be the ARN of an SQS Queue
-                         * For sms, this would be a phone number of an SMS-enabled device
+                         * For sms, this would be a phone number of an
+                           SMS-enabled device
+                         * For application, the endpoint is the EndpointArn
+                           of a mobile app and device.
         """
         params = {'TopicArn': topic,
                   'Protocol': protocol,
@@ -306,7 +344,7 @@ class SNSConnection(AWSQueryConnection):
         """
         t = queue.id.split('/')
         q_arn = queue.arn
-        sid = hashlib.md5(topic + q_arn).hexdigest()
+        sid = hashlib.md5((topic + q_arn).encode('utf-8')).hexdigest()
         sid_exists = False
         resp = self.subscribe(topic, 'sqs', q_arn)
         attr = queue.get_attributes('Policy')
@@ -717,7 +755,7 @@ class SNSConnection(AWSQueryConnection):
         params['ContentType'] = 'JSON'
         response = self.make_request(action=action, verb=verb,
                                      path=path, params=params)
-        body = response.read()
+        body = response.read().decode('utf-8')
         boto.log.debug(body)
         if response.status == 200:
             return json.loads(body)

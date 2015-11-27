@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2012 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Additional help about wildcards."""
 
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
+from __future__ import absolute_import
+
 from gslib.help_provider import HelpProvider
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 
-_detailed_help_text = ("""
+_DETAILED_HELP_TEXT = ("""
 <B>DESCRIPTION</B>
   gsutil supports URI wildcards. For example, the command:
 
@@ -60,16 +58,20 @@ _detailed_help_text = ("""
 
 
 <B>BUCKET WILDCARDS</B>
-  You can specify wildcards for bucket names. For example:
+  You can specify wildcards for bucket names within a single project. For
+  example:
 
     gsutil ls gs://data*.example.com
 
   will list the contents of all buckets whose name starts with "data" and
-  ends with ".example.com".
+  ends with ".example.com" in the default project. The -p option can be used
+  to specify a project other than the default.  For example:
+
+    gsutil ls -p other-project gs://data*.example.com
 
   You can also combine bucket and object name wildcards. For example this
   command will remove all ".txt" files in any of your Google Cloud Storage
-  buckets:
+  buckets in the default project:
 
     gsutil rm gs://*/**.txt
 
@@ -96,6 +98,22 @@ _detailed_help_text = ("""
     gs://bucket/[a-m]??.j*g
 
 
+<B>DIFFERENT BEHAVIOR FOR "DOT" FILES IN LOCAL FILE SYSTEM</B>
+  Per standard Unix behavior, the wildcard "*" only matches files that don't
+  start with a "." character (to avoid confusion with the "." and ".."
+  directories present in all Unix directories). gsutil provides this same
+  behavior when using wildcards over a file system URI, but does not provide
+  this behavior over cloud URIs. For example, the following command will copy
+  all objects from gs://bucket1 to gs://bucket2:
+
+    gsutil cp gs://bucket1/* gs://bucket2
+
+  but the following command will copy only files that don't start with a "."
+  from the directory "dir" to gs://bucket1:
+
+    gsutil cp dir/* gs://bucket1
+
+
 <B>EFFICIENCY CONSIDERATION: USING WILDCARDS OVER MANY OBJECTS</B>
   It is more efficient, faster, and less network traffic-intensive
   to use wildcards that have a non-wildcard object-name prefix, like:
@@ -106,12 +124,12 @@ _detailed_help_text = ("""
 
     gs://bucket/*abc.txt
 
-  This is because the request for "gs://bucket/abc*.txt" asks the server
-  to send back the subset of results whose object names start with "abc",
-  and then gsutil filters the result list for objects whose name ends with
-  ".txt". In contrast, "gs://bucket/*abc.txt" asks the server for the complete
-  list of objects in the bucket and then filters for those objects whose name
-  ends with "abc.txt". This efficiency consideration becomes increasingly
+  This is because the request for "gs://bucket/abc*.txt" asks the server to send
+  back the subset of results whose object name start with "abc" at the bucket
+  root, and then gsutil filters the result list for objects whose name ends with
+  ".txt".  In contrast, "gs://bucket/*abc.txt" asks the server for the complete
+  list of objects in the bucket root, and then filters for those objects whose
+  name ends with "abc.txt". This efficiency consideration becomes increasingly
   noticeable when you use buckets containing thousands or more objects. It is
   sometimes possible to set up the names of your objects to fit with expected
   wildcard matching patterns, to take advantage of the efficiency of doing
@@ -165,15 +183,12 @@ _detailed_help_text = ("""
 class CommandOptions(HelpProvider):
   """Additional help about wildcards."""
 
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'wildcards',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['wildcard', '*', '**'],
-    # Type of help:
-    HELP_TYPE : HelpType.ADDITIONAL_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Wildcard Names',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Help specification. See help_provider.py for documentation.
+  help_spec = HelpProvider.HelpSpec(
+      help_name='wildcards',
+      help_name_aliases=['wildcard', '*', '**'],
+      help_type='additional_help',
+      help_one_line_summary='Wildcard Names',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )

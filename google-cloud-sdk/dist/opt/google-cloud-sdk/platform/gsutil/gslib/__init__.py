@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2010 Google Inc. All Rights Reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
@@ -18,14 +19,29 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
-
 """Package marker file."""
+
+from __future__ import absolute_import
 
 import os
 import pkgutil
 import sys
+import tempfile
 
 import gslib.exception
+
+coverage_outfile = os.getenv('GSUTIL_COVERAGE_OUTPUT_FILE', None)
+if coverage_outfile:
+  try:
+    import coverage  # pylint: disable=g-import-not-at-top
+    coverage_controller = coverage.coverage(
+        data_file=coverage_outfile, data_suffix=True, auto_data=True,
+        source=['gslib'], omit=['gslib/third_party/*', 'gslib/tests/*',
+                                tempfile.gettempdir() + '*'])
+    coverage_controller.start()
+  except ImportError:
+    pass
+
 
 # Directory containing the gslib module.
 GSLIB_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -69,8 +85,12 @@ if IS_EDITABLE_INSTALL:
       PROGRAM_FILES_DIR, 'third_party', 'boto', 'tests', 'integration', 's3')
   sys.path.append(mock_storage_location)
 
+
 def _GetFileContents(filename):
   """Tries to find the given filename on disk or via pkgutil.get_data.
+
+  Args:
+    filename: String name of the file.
 
   Returns:
     A tuple containing the absolute path to the requested file and the file's

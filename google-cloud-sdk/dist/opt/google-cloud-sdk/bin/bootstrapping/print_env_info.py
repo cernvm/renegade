@@ -14,7 +14,7 @@ import bootstrapping
 import argparse
 import sys
 
-from google.cloud.sdk.core import config
+from googlecloudsdk.core import config
 
 
 def main():
@@ -24,17 +24,18 @@ def main():
 
   project, account = bootstrapping.GetActiveProjectAndAccount()
 
+  # pylint:disable=superfluous-parens
   if args.item == 'multistore_path':
-    print config.Paths().LegacyCredentialsMultistorePath(account)
+    print(config.Paths().LegacyCredentialsMultistorePath(account))
   elif args.item == 'json_path':
-    print config.Paths().LegacyCredentialsJSONPath(account)
+    print(config.Paths().LegacyCredentialsJSONPath(account))
   elif args.item == 'gae_java_path':
-    print config.Paths().LegacyCredentialsGAEJavaPath(account)
+    print(config.Paths().LegacyCredentialsGAEJavaPath(account))
   elif args.item == 'project':
-    print project
+    print(project)
   else:
-    print ('Valid keys are multistore_path, json_path, gae_java_path, or '
-           'project.')
+    print('Valid keys are multistore_path, json_path, gae_java_path, or '
+          'project.')
     sys.exit(1)
 
 

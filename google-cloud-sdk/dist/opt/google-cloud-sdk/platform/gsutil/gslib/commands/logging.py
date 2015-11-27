@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2011 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,43 +12,34 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Implementation of logging configuration command for buckets."""
 
-import getopt
+from __future__ import absolute_import
+
 import sys
-import textwrap
+
+from apitools.base.py import encoding
 
 from gslib.command import Command
-from gslib.command import COMMAND_NAME
-from gslib.command import COMMAND_NAME_ALIASES
-from gslib.command import FILE_URIS_OK
-from gslib.command import MAX_ARGS
-from gslib.command import MIN_ARGS
-from gslib.command import PROVIDER_URIS_OK
-from gslib.command import SUPPORTED_SUB_ARGS
-from gslib.command import URIS_START_ARG
+from gslib.command_argument import CommandArgument
+from gslib.cs_api_map import ApiSelector
 from gslib.exception import CommandException
 from gslib.help_provider import CreateHelpText
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
-from gslib.help_provider import SUBCOMMAND_HELP_TEXT
+from gslib.storage_url import StorageUrlFromString
+from gslib.third_party.storage_apitools import storage_v1_messages as apitools_messages
 from gslib.util import NO_MAX
-from gslib.util import UnaryDictToXml
-from xml.dom.minidom import parseString as XmlParseString
+from gslib.util import UrlsAreForSingleProvider
 
 _SET_SYNOPSIS = """
-  gsutil logging set on -b logging_bucket [-o log_object_prefix] uri...
-  gsutil logging set off uri...
+  gsutil logging set on -b logging_bucket [-o log_object_prefix] url...
+  gsutil logging set off url...
 """
 
 _GET_SYNOPSIS = """
-  gsutil logging get uri
+  gsutil logging get url
 """
 
-_SYNOPSIS =  _SET_SYNOPSIS + _GET_SYNOPSIS.lstrip('\n') + '\n'
+_SYNOPSIS = _SET_SYNOPSIS + _GET_SYNOPSIS.lstrip('\n') + '\n'
 
 _SET_DESCRIPTION = """
 <B>SET</B>
@@ -55,8 +47,8 @@ _SET_DESCRIPTION = """
 
 <B>ON</B>
   The "gsutil set on" command will enable access logging of the
-  buckets named by the specified uris, outputting log files in the specified
-  logging_bucket. logging_bucket must already exist, and all URIs must name
+  buckets named by the specified URLs, outputting log files in the specified
+  logging_bucket. logging_bucket must already exist, and all URLs must name
   buckets (e.g., gs://bucket). The required bucket parameter specifies the
   bucket to which the logs are written, and the optional log_object_prefix
   parameter specifies the prefix for log object names. The default prefix
@@ -72,7 +64,7 @@ _SET_DESCRIPTION = """
   Next, you need to grant cloud-storage-analytics@google.com write access to
   the log bucket, using this command:
 
-    acl ch -g cloud-storage-analytics@google.com:W gs://my_logging_bucket
+    gsutil acl ch -g cloud-storage-analytics@google.com:W gs://my_logging_bucket
 
   Note that log data may contain sensitive information, so you should make
   sure to set an appropriate default bucket ACL to protect that data. (See
@@ -80,7 +72,7 @@ _SET_DESCRIPTION = """
 
 <B>OFF</B>
   This command will disable access logging of the buckets named by the
-  specified uris. All URIs must name buckets (e.g., gs://bucket).
+  specified URLs. All URLs must name buckets (e.g., gs://bucket).
 
   No logging data is removed from the log buckets when you disable logging,
   but Google Cloud Storage will stop delivering new logs once you have
@@ -90,20 +82,13 @@ _SET_DESCRIPTION = """
 
 _GET_DESCRIPTION = """
 <B>GET</B>
-  If logging is enabled for the specified bucket uri, the server responds
-  with a <Logging> XML element that looks something like this:
+  If logging is enabled for the specified bucket url, the server responds
+  with a JSON document that looks something like this:
 
-    <?xml version="1.0" ?>
-    <Logging>
-        <LogBucket>
-            logs-bucket
-        </LogBucket>
-        <LogObjectPrefix>
-            my-logs-enabled-bucket
-        </LogObjectPrefix>
-    </Logging>
-
-  If logging is not enabled, an empty <Logging> element is returned.
+    {
+      "logObjectPrefix": "AccessLog",
+      "logBucket": "my_logging_bucket"
+    }
 
   You can download log data from your log bucket using the gsutil cp command.
 
@@ -126,7 +111,7 @@ _DESCRIPTION = """
   https://developers.google.com/storage/docs/accesslogs#reviewing
 """
 
-_detailed_help_text = CreateHelpText(_SYNOPSIS, _DESCRIPTION)
+_DETAILED_HELP_TEXT = CreateHelpText(_SYNOPSIS, _DESCRIPTION)
 
 _get_help_text = CreateHelpText(_GET_SYNOPSIS, _GET_DESCRIPTION)
 _set_help_text = CreateHelpText(_SET_SYNOPSIS, _SET_DESCRIPTION)
@@ -135,112 +120,113 @@ _set_help_text = CreateHelpText(_SET_SYNOPSIS, _SET_DESCRIPTION)
 class LoggingCommand(Command):
   """Implementation of gsutil logging command."""
 
-  # Command specification (processed by parent class).
-  command_spec = {
-    # Name of command.
-    COMMAND_NAME : 'logging',
-    # List of command name aliases.
-    COMMAND_NAME_ALIASES : ['disablelogging', 'enablelogging', 'getlogging'],
-    # Min number of args required by this command.
-    MIN_ARGS : 2,
-    # Max number of args required by this command, or NO_MAX.
-    MAX_ARGS : NO_MAX,
-    # Getopt-style string specifying acceptable sub args.
-    SUPPORTED_SUB_ARGS : 'b:o:',
-    # True if file URIs acceptable for this command.
-    FILE_URIS_OK : False,
-    # True if provider-only URIs acceptable for this command.
-    PROVIDER_URIS_OK : False,
-    # Index in args of first URI arg.
-    URIS_START_ARG : 0,
-  }
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'logging',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['loggingconfig', 'logs', 'log', 'getlogging',
+  # Command specification. See base class for documentation.
+  command_spec = Command.CreateCommandSpec(
+      'logging',
+      command_name_aliases=['disablelogging', 'enablelogging', 'getlogging'],
+      usage_synopsis=_SYNOPSIS,
+      min_args=2,
+      max_args=NO_MAX,
+      supported_sub_args='b:o:',
+      file_url_ok=False,
+      provider_url_ok=False,
+      urls_start_arg=0,
+      gs_api_support=[ApiSelector.XML, ApiSelector.JSON],
+      gs_default_api=ApiSelector.JSON,
+      argparse_arguments=[
+          CommandArgument('mode', choices=['on', 'off']),
+          CommandArgument.MakeZeroOrMoreCloudBucketURLsArgument()
+      ]
+  )
+  # Help specification. See help_provider.py for documentation.
+  help_spec = Command.HelpSpec(
+      help_name='logging',
+      help_name_aliases=['loggingconfig', 'logs', 'log', 'getlogging',
                          'enablelogging', 'disablelogging'],
-    # Type of help:
-    HELP_TYPE : HelpType.COMMAND_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'Configure or retrieve logging on buckets',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-    # Help text for sub-commands.
-    SUBCOMMAND_HELP_TEXT : {'get' : _get_help_text,
-                            'set' : _set_help_text},
-  }
+      help_type='command_help',
+      help_one_line_summary='Configure or retrieve logging on buckets',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={'get': _get_help_text, 'set': _set_help_text},
+  )
 
   def _Get(self):
-    uri_args = self.args
+    """Gets logging configuration for a bucket."""
+    bucket_url, bucket_metadata = self.GetSingleBucketUrlFromArg(
+        self.args[0], bucket_fields=['logging'])
 
-    # Iterate over URIs, expanding wildcards, and getting the website
-    # configuration on each.
-    some_matched = False
-    for uri_str in uri_args:
-      for blr in self.WildcardIterator(uri_str):
-        uri = blr.GetUri()
-        if not uri.names_bucket():
-          raise CommandException('URI %s must name a bucket for the %s command'
-                                 % (uri, self.command_name))
-        some_matched = True
-        sys.stderr.write('Getting logging config on %s...\n' % uri)
-        logging_config_xml = UnaryDictToXml(uri.get_logging_config())
-        sys.stdout.write(XmlParseString(logging_config_xml).toprettyxml())
-    if not some_matched:
-      raise CommandException('No URIs matched')
+    if bucket_url.scheme == 's3':
+      sys.stdout.write(self.gsutil_api.XmlPassThroughGetLogging(
+          bucket_url, provider=bucket_url.scheme))
+    else:
+      if (bucket_metadata.logging and bucket_metadata.logging.logBucket and
+          bucket_metadata.logging.logObjectPrefix):
+        sys.stdout.write(str(encoding.MessageToJson(
+            bucket_metadata.logging)) + '\n')
+      else:
+        sys.stdout.write('%s has no logging configuration.\n' % bucket_url)
+    return 0
 
   def _Enable(self):
+    """Enables logging configuration for a bucket."""
     # Disallow multi-provider 'logging set on' calls, because the schemas
     # differ.
-    storage_uri = self.UrisAreForSingleProvider(self.args)
-    if not storage_uri:
+    if not UrlsAreForSingleProvider(self.args):
       raise CommandException('"logging set on" command spanning providers not '
                              'allowed.')
-    target_bucket_uri = None
+    target_bucket_url = None
     target_prefix = None
     for opt, opt_arg in self.sub_opts:
       if opt == '-b':
-        target_bucket_uri = self.suri_builder.StorageUri(opt_arg)
+        target_bucket_url = StorageUrlFromString(opt_arg)
       if opt == '-o':
         target_prefix = opt_arg
 
-    if not target_bucket_uri:
+    if not target_bucket_url:
       raise CommandException('"logging set on" requires \'-b <log_bucket>\' '
                              'option')
-    if not target_bucket_uri.names_bucket():
-      raise CommandException('-b option must specify a bucket uri')
+    if not target_bucket_url.IsBucket():
+      raise CommandException('-b option must specify a bucket URL.')
 
-    did_some_work = False
-    for uri_str in self.args:
-      for uri in self.WildcardIterator(uri_str).IterUris():
-        if uri.names_object():
-          raise CommandException('logging cannot be applied to objects')
-        did_some_work = True
-        self.logger.info('Enabling logging on %s...', uri)
-        self.proj_id_handler.FillInProjectHeaderIfNeeded(
-            'enablelogging', storage_uri, self.headers)
-        uri.enable_logging(target_bucket_uri.bucket_name, target_prefix, False,
-                           self.headers)
-    if not did_some_work:
-      raise CommandException('No URIs matched')
+    # Iterate over URLs, expanding wildcards and setting logging on each.
+    some_matched = False
+    for url_str in self.args:
+      bucket_iter = self.GetBucketUrlIterFromArg(url_str, bucket_fields=['id'])
+      for blr in bucket_iter:
+        url = blr.storage_url
+        some_matched = True
+        self.logger.info('Enabling logging on %s...', blr)
+        logging = apitools_messages.Bucket.LoggingValue(
+            logBucket=target_bucket_url.bucket_name,
+            logObjectPrefix=target_prefix or url.bucket_name)
+
+        bucket_metadata = apitools_messages.Bucket(logging=logging)
+        self.gsutil_api.PatchBucket(url.bucket_name, bucket_metadata,
+                                    provider=url.scheme, fields=['id'])
+    if not some_matched:
+      raise CommandException('No URLs matched')
+    return 0
 
   def _Disable(self):
-    did_some_work = False
-    for uri_str in self.args:
-      for uri in self.WildcardIterator(uri_str).IterUris():
-        if uri.names_object():
-          raise CommandException('logging cannot be applied to objects')
-        did_some_work = True
-        self.logger.info('Disabling logging on %s...', uri)
-        self.proj_id_handler.FillInProjectHeaderIfNeeded('disablelogging',
-                                                         uri, self.headers)
-        uri.disable_logging(False, self.headers)
-    if not did_some_work:
-      raise CommandException('No URIs matched')
+    """Disables logging configuration for a bucket."""
+    # Iterate over URLs, expanding wildcards, and disabling logging on each.
+    some_matched = False
+    for url_str in self.args:
+      bucket_iter = self.GetBucketUrlIterFromArg(url_str, bucket_fields=['id'])
+      for blr in bucket_iter:
+        url = blr.storage_url
+        some_matched = True
+        self.logger.info('Disabling logging on %s...', blr)
+        logging = apitools_messages.Bucket.LoggingValue()
 
-  # Command entry point.
+        bucket_metadata = apitools_messages.Bucket(logging=logging)
+        self.gsutil_api.PatchBucket(url.bucket_name, bucket_metadata,
+                                    provider=url.scheme, fields=['id'])
+    if not some_matched:
+      raise CommandException('No URLs matched')
+    return 0
+
   def RunCommand(self):
+    """Command entry point for the logging command."""
     # Parse the subcommand and alias for the new logging command.
     action_subcommand = self.args.pop(0)
     if action_subcommand == 'get':
@@ -248,7 +234,7 @@ class LoggingCommand(Command):
     elif action_subcommand == 'set':
       state_subcommand = self.args.pop(0)
       if not self.args:
-        self._RaiseWrongNumberOfArgumentsException()
+        self.RaiseWrongNumberOfArgumentsException()
       if state_subcommand == 'on':
         func = self._Enable
       elif state_subcommand == 'off':
@@ -256,18 +242,12 @@ class LoggingCommand(Command):
       else:
         raise CommandException((
             'Invalid subcommand "%s" for the "%s %s" command.\n'
-            'See "gsutil help logging".') %
-            (state_subcommand, self.command_name, action_subcommand))
+            'See "gsutil help logging".') % (
+                state_subcommand, self.command_name, action_subcommand))
     else:
       raise CommandException(('Invalid subcommand "%s" for the %s command.\n'
-                             'See "gsutil help logging".') %
+                              'See "gsutil help logging".') %
                              (action_subcommand, self.command_name))
-    try:
-      (self.sub_opts, self.args) = getopt.getopt(self.args,
-          self.command_spec[SUPPORTED_SUB_ARGS])
-      self.CheckArguments()
-    except getopt.GetoptError, e:
-      raise CommandException('%s for "%s" command.' % (e.msg,
-                                                       self.command_name))
+    self.ParseSubOpts(check_args=True)
     func()
     return 0

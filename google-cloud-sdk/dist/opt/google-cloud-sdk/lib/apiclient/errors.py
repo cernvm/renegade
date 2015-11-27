@@ -1,6 +1,6 @@
 #!/usr/bin/python2.4
 #
-# Copyright (C) 2010 Google Inc.
+# Copyright 2014 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ should be defined in this file.
 
 
 
+import json
 
 from oauth2client import util
-from oauth2client.anyjson import simplejson
 
 
 class Error(Exception):
@@ -45,7 +45,7 @@ class HttpError(Error):
     """Calculate the reason for the error from the response content."""
     reason = self.resp.reason
     try:
-      data = simplejson.loads(self.content)
+      data = json.loads(self.content)
       reason = data['error']['message']
     except (ValueError, KeyError):
       pass

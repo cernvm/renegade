@@ -12,5 +12,5 @@ For more information on how to set up and use the Cloud SDK, please see:
 System Requirements:
   - The Cloud SDK for Python and for Go requires Python 2.7.x.
   - The Cloud SDK for Java requires Java 1.7+ and Python 2.7.x.
-  - The SDK runs on Windows, Mac OS X, and Linux. Some of the individual tools 
-    bundled with the Cloud SDK, such as gcutil, have more stringent requirements.
+  - The SDK runs on Windows, Mac OS X, and Linux. Some of the individual tools
+    bundled with the Cloud SDK might have more stringent requirements.

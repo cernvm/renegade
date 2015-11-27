@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2013 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,35 +12,38 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Additional help about CRC32C and installing crcmod."""
 
-from gslib.help_provider import HELP_NAME
-from gslib.help_provider import HELP_NAME_ALIASES
-from gslib.help_provider import HELP_ONE_LINE_SUMMARY
+from __future__ import absolute_import
+
 from gslib.help_provider import HelpProvider
-from gslib.help_provider import HELP_TEXT
-from gslib.help_provider import HelpType
-from gslib.help_provider import HELP_TYPE
 
-_detailed_help_text = ("""
+_DETAILED_HELP_TEXT = ("""
 <B>OVERVIEW</B>
   Google Cloud Storage provides a cyclic redundancy check (CRC) header that
-  allows clients to verify the integrity of composite object contents. All other
-  download operations currently use MD5 for integrity checks, but support for
-  CRC may be added in the future. The CRC variant used by Google Cloud Storage
-  is called CRC32C (Castagnoli), which is not available in the standard Python
-  distribution. The implementation of CRC32C used by gsutil is provided by a
-  third-party Python module called
+  allows clients to verify the integrity of object contents. For non-composite
+  objects GCS also provides an MD5 header to allow clients to verify object
+  integrity, but for composite objects only the CRC is available. gsutil
+  automatically performs integrity checks on all uploads and downloads.
+  Additionally, you can use the "gsutil hash" command to calculate a CRC for
+  any local file.
+
+  The CRC variant used by Google Cloud Storage is called CRC32C (Castagnoli),
+  which is not available in the standard Python distribution. The implementation
+  of CRC32C used by gsutil is provided by a third-party Python module called
   `crcmod <https://pypi.python.org/pypi/crcmod>`_.
 
   The crcmod module contains a pure-Python implementation of CRC32C, but using
-  it results in degraded performance, as the CPU becomes the bottleneck for
-  transfers. A Python C extension is also provided by crcmod, which requires
-  compiling into a binary module for use. gsutil ships with a precompiled
-  crcmod C extension for Mac OS X; for other platforms, see installation
-  instructions below.
+  it results in very poor performance. A Python C extension is also provided by
+  crcmod, which requires compiling into a binary module for use. gsutil ships
+  with a precompiled crcmod C extension for Mac OS X; for other platforms, see
+  the installation instructions below.
 
-  Since gsutil is platform agnostic, the
-  compiled version of crcmod is not distributed with the gsutil release.
+  At the end of each copy operation, the gsutil cp and rsync commands validate
+  that the checksum of the source file/object matches the checksum of the
+  destination file/object. If the checksums do not match, gsutil will delete
+  the invalid copy and print a warning message. This very rarely happens, but
+  if it does, please contact gs-team@google.com.
 
 
 <B>CONFIGURATION</B>
@@ -106,22 +110,31 @@ _detailed_help_text = ("""
   https://pypi.python.org/pypi/crcmod/1.7
 
   MSI installers are available for the 32-bit versions of Python 2.6 and 2.7.
+  Make sure to install to a 32-bit Python directory. If you're using 64-bit
+  Python it won't work with 32-bit crcmod, and instead you'll need to install
+  32-bit Python in order to use crcmod.
 
+  Note: If you have installed crcmod and gsutil hasn't detected it, it may have
+  been installed to the wrong directory. It should be located at
+  <python_dir>\\files\\Lib\\site-packages\\crcmod\\
+
+  In some cases the installer will incorrectly install to
+  <python_dir>\\Lib\\site-packages\\crcmod\\
+
+  Manually copying the crcmod directory to the correct location should resolve
+  the issue.
 """)
 
 
 class CommandOptions(HelpProvider):
   """Additional help about CRC32C and installing crcmod."""
 
-  help_spec = {
-    # Name of command or auxiliary help info for which this help applies.
-    HELP_NAME : 'crc32c',
-    # List of help name aliases.
-    HELP_NAME_ALIASES : ['crc32', 'crc', 'crcmod'],
-    # Type of help:
-    HELP_TYPE : HelpType.ADDITIONAL_HELP,
-    # One line summary of this help.
-    HELP_ONE_LINE_SUMMARY : 'CRC32C and Installing crcmod',
-    # The full help text.
-    HELP_TEXT : _detailed_help_text,
-  }
+  # Help specification. See help_provider.py for documentation.
+  help_spec = HelpProvider.HelpSpec(
+      help_name='crc32c',
+      help_name_aliases=['crc32', 'crc', 'crcmod'],
+      help_type='additional_help',
+      help_one_line_summary='CRC32C and Installing crcmod',
+      help_text=_DETAILED_HELP_TEXT,
+      subcommand_help_text={},
+  )

@@ -28,7 +28,7 @@ def main():
   if args.check_credentials:
     bootstrapping.CheckCredOrExit()
   if args.check_updates:
-    bootstrapping.CheckUpdates()
+    bootstrapping.CheckUpdates(args.command_name)
 
 
 if __name__ == '__main__':
