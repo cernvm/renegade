@@ -24,6 +24,7 @@ PACKAGES = \
 	eos-client \
 	eos-fuse \
 	elastiq \
+	google-cloud-sdk \
 	lxdm \
 	openafs-kernel \
 	open-vm-tools \
