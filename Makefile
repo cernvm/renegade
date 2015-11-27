@@ -16,6 +16,8 @@ PACKAGES = \
 	cernvm-release \
 	cernvm-theme \
 	cernvm-update \
+	compat-xrootd-libs \
+	compat-xrootd-client-libs \
 	docker-cernvm \
 	ec2-api-tools \
 	ec2-ami-tools \
