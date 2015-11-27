@@ -12,6 +12,7 @@ $(UPSTREAM_RPM): version release
 $(TREE): $(UPSTREAM_RPM)
 	rm -rf $(TREE) && mkdir $(TREE)
 	cd $(TREE) && cat ../$(UPSTREAM_RPM) | rpm2cpio | cpio -id
+	find $(TREE) -name '*.so' -type l -exec rm -f {} \;
 
 $(SOURCE_TARBALL): $(TREE) version release | $(RPMTOP)/SOURCES
 	gtar -cvz -f - `basename $(TREE)` > $(SOURCE_TARBALL)
