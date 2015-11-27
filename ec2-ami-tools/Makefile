@@ -8,6 +8,7 @@ src/usr/lib/ec2/bin: ec2-ami-tools-$(VERSION).zip
 	cp -v ec2-ami-tools-$(VERSION)/license.txt src/usr/lib/ec2/license-ec2-ami-tools.txt
 	rm -rf ec2-ami-tools-$(VERSION)
 	touch src/usr/lib/ec2/bin
+
 ec2-ami-tools-$(VERSION).zip:
 	curl http://ecsft.cern.ch/dist/cernvm/ec2-ami-tools-$(VERSION).zip > ec2-ami-tools-$(VERSION).zip
 
