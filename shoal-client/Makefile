@@ -2,4 +2,4 @@
 include $(TOP)/config.mk
 
 $(RPM):
-	wget -O $(RPM) http://shoal.heprc.uvic.ca/repo/prod/sl/6X/x86_64//$(NAME)-$(VERSION)-$(RELEASE).$(ARCH).rpm
+	wget -O $(RPM) http://206.12.59.209/repo/sl6x/dev/noarch/$(NAME)-$(VERSION)-$(RELEASE).el6.$(ARCH).rpm
