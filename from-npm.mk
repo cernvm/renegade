@@ -27,7 +27,7 @@ $(SPEC_FILE): version release $(NPM_TARBALL) $(TOP)/template.spec | $(RPMTOP)/SP
 	  sed -e "s/^BuildArch: AUTO/BuildArch: $(ARCH)/" | \
 	  sed -e "s/^EXTRADEPENDS/Requires: nodejs/" | \
 	  sed -e "s/^EXTRAPROVIDES/Requires: nodejs/" | \
-	  sed -e "/^AUTODEPS/d" | \
+	  sed -e "s/^AUTODEPS/AutoReqProv: no/" | \
 	  sed -f $(TOP)/files.sed \
 	> $(SPEC_FILE)
 	
