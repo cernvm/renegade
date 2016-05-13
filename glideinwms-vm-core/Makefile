@@ -2,4 +2,4 @@
 include $(TOP)/config.mk
 
 $(RPM):
-	curl http://lcggwms01.gridpp.rl.ac.uk:8319/glideinwms-vm-core-$(VERSION)-$(RELEASE).$(ARCH).rpm > $(RPM)
+	curl http://glideinwms.fnal.gov/rpms/release/el6/x86_64/$(NAME)-$(VERSION)-$(RELEASE).$(ARCH).rpm > $(RPM)
