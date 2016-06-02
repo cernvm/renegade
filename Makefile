@@ -36,6 +36,7 @@ PACKAGES = \
 	erlang \
 	glideinwms-vm-core \
 	glideinwms-vm-cernvm \
+	glideinwms-vm-ec2 \
 	google-cloud-sdk \
 	nimbus-cloud-client \
 	openafs-kernel \
