@@ -1,5 +1,6 @@
 /.ucernvm_bootstrap
 /.ucernvm_pinfiles
+/etc/resolv.conf
 /etc/fstab
 /etc/workqueue.conf
 /etc/lxdm/*
