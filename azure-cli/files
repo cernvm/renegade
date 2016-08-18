@@ -1,1 +1,2 @@
-/usr/*
+/usr/bin/azure
+/usr/lib/node_modules/azure-cli
