@@ -1,5 +1,25 @@
 WALinuxAgent                                                          Changelog
 |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+11 Jan 2016, WALinuxAgent 2.0.17
+   . add the support for the rdma driver installing/updating.(this in only for
+   opensuse)
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+5 Jan 2016, WALinuxAgent 2.0.16
+   . Handle 410 when reporting health
+   . Add timeout to http request
+   . Fix multiple issues with extension handling
+
+6 Sep 2015, WALinuxAgent 2.0.15
+   . FreeBSD - fix default gateway
+   . Oracle - fix distro name detection
+   . Redhat - Port "chpasswd" from 2.1
+
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+1 Jul 2015, WALinuxAgent 2.0.14
+   . Fix rdma config
+   . Fix page blob uploading for python 2.6
+   . Fix http request error handling
+
 1 Jun 2015, WALinuxAgent 2.0.13
    . Handle http 410 returned by host
    . Add support for http proxy

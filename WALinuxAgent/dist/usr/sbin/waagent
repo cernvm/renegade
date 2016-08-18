@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Windows Azure Linux Agent
+# Azure Linux Agent
 #
 # Copyright 2015 Microsoft Corporation
 #
@@ -23,6 +23,8 @@
 # http://msdn.microsoft.com/en-us/library/cc227259%28PROT.13%29.aspx
 #
 
+import crypt
+import random
 import array
 import base64
 import httplib
@@ -50,6 +52,7 @@ import zipfile
 import json
 import datetime
 import xml.sax.saxutils
+from distutils.version import LooseVersion
 
 if not hasattr(subprocess,'check_output'):
     def check_output(*popenargs, **kwargs):
@@ -77,10 +80,10 @@ if not hasattr(subprocess,'check_output'):
 
     subprocess.check_output=check_output
     subprocess.CalledProcessError=CalledProcessError
-    
+
 GuestAgentName = "WALinuxAgent"
-GuestAgentLongName = "Windows Azure Linux Agent"
-GuestAgentVersion = "WALinuxAgent-2.0.13"
+GuestAgentLongName = "Azure Linux Agent"
+GuestAgentVersion = "WALinuxAgent-2.0.18"
 ProtocolVersion = "2012-11-30" #WARNING this value is used to confirm the correct fabric protocol.
 
 Config = None
@@ -92,7 +95,7 @@ ExtensionChildren = []
 VMM_STARTUP_SCRIPT_NAME='install'
 VMM_CONFIG_FILE_NAME='linuxosconfiguration.xml'
 global RulesFiles
-RulesFiles = [ "/lib/udev/rules.d/75-persistent-net-generator.rules",
+RulesFiles = [ "/etc/udev/rules.d/75-persistent-net-generator.rules",
                "/etc/udev/rules.d/70-persistent-net.rules" ]
 VarLibDhcpDirectories = ["/var/lib/dhclient", "/var/lib/dhcpcd", "/var/lib/dhcp"]
 EtcDhcpClientConfFiles = ["/etc/dhcp/dhclient.conf", "/etc/dhcp3/dhclient.conf"]
@@ -106,7 +109,7 @@ HandlerStatusToAggStatus = {"installed":"Installing", "enabled":"Ready", "uninta
 
 WaagentConf = """\
 #
-# Windows Azure Linux Agent Configuration
+# Azure Linux Agent Configuration
 #
 
 Role.StateConsumer=None                 # Specified program is invoked with the argument "Ready" when we report ready status
@@ -126,12 +129,13 @@ ResourceDisk.MountPoint=/mnt/resource   #
 ResourceDisk.EnableSwap=n               # Create and use swapfile on resource disk.
 ResourceDisk.SwapSizeMB=0               # Size of the swapfile.
 
-LBProbeResponder=y                      # Respond to load balancer probes if requested by Windows Azure.
+LBProbeResponder=y                      # Respond to load balancer probes if requested by Azure.
 
 Logs.Verbose=n                          # Enable verbose logs
 
 OS.RootDeviceScsiTimeout=300            # Root device timeout in seconds.
 OS.OpensslPath=None                     # If "None", the system default version is used.
+OS.PersistentNetNames=n                 # Enable/disable udev rules for persistent NIC<->MAC mapping (default is to disable udev).
 """
 README_FILENAME="DATALOSS_WARNING_README.txt"
 README_FILECONTENT="""\
@@ -143,6 +147,57 @@ Please do not use this disk for storing any personal or application data.
 
 For additional details to please refer to the MSDN documentation at : http://msdn.microsoft.com/en-us/library/windowsazure/jj672979.aspx
 """
+
+class KVPReader(object):
+    def __init__(self):
+        pass
+
+    def read_bytes(self, pool):
+        filepath = "/var/lib/hyperv/.kvp_pool_" + str(pool)
+        mode = 'r'
+        c = None
+        try:
+            with open(filepath, mode) as F:
+                c = F.read()
+        except IOError, e:
+            errMsg = 'can not read kvp pool file with error: %s, stack trace: %s' % (str(e), traceback.format_exc())
+            Log(errMsg)
+        if(c is None):
+            return None
+        else:
+            b = bytes(c)
+            return b
+
+    def bytes_to_str(self, b, start, end):
+        buf = None 
+        for i in range(start, end):
+            if ord(b[i]) == 0:#Found string end
+                buf = bytearray(i - start)
+                buf[:] = b[start : i]
+                break
+        if(buf):
+            return buf.decode('utf-8')
+        else:
+            return None
+
+    def read_raw_kvp(self, pool):
+        b = self.read_bytes(pool)
+        if(b is None):
+            return None
+        else:
+            key_start = 0
+            val_start = 512
+            key_len = 512
+            val_len = 2048
+            step = key_len + val_len
+            data = {}
+            while val_start < len(b):
+                key = self.bytes_to_str(b, key_start, key_start + key_len)
+                val = self.bytes_to_str(b, val_start, val_start + val_len)
+                data[key] = val
+                key_start += step
+                val_start += step
+            return data;
 
 ############################################################
 # BEGIN DISTRO CLASS DEFS
@@ -173,12 +228,12 @@ class AbstractDistro(object):
         self.ssh_config_file='/etc/ssh/sshd_config'
         self.hostname_file_path='/etc/hostname'
         self.dhcp_client_name='dhclient'
-        self.requiredDeps = [ 'route', 'shutdown', 'ssh-keygen', 'useradd', 
-                              'openssl', 'sfdisk', 'fdisk', 'mkfs', 'chpasswd', 
+        self.requiredDeps = [ 'route', 'shutdown', 'ssh-keygen', 'useradd', 'usermod',
+                              'openssl', 'sfdisk', 'fdisk', 'mkfs', 
                               'sed', 'grep', 'sudo', 'parted' ]
         self.init_script_file='/etc/init.d/waagent'
         self.agent_package_name='WALinuxAgent'
-        self.fileBlackList = [ "/root/.bash_history", "/var/log/waagent.log",'/etc/resolv.conf' ]        
+        self.fileBlackList = [ "/root/.bash_history", "/var/log/waagent.log",'/etc/resolv.conf' ]
         self.agent_files_to_uninstall = ["/etc/waagent.conf", "/etc/logrotate.d/waagent"]
         self.grubKernelBootOptionsFile = '/etc/default/grub'
         self.grubKernelBootOptionsLine = 'GRUB_CMDLINE_LINUX_DEFAULT='
@@ -187,8 +242,9 @@ class AbstractDistro(object):
         self.sudoers_dir_base = '/etc'
         self.waagent_conf_file = WaagentConf
         self.shadow_file_mode=0600
+        self.shadow_file_path="/etc/shadow"
         self.dhcp_enabled = False
-        
+
     def isSelinuxSystem(self):
         """
         Checks and sets self.selinux = True if SELinux is available on system.
@@ -199,7 +255,7 @@ class AbstractDistro(object):
             else:
                 self.selinux = True
         return self.selinux
-    
+
     def isSelinuxRunning(self):
         """
         Calls shell command 'getenforce' and returns True if 'Enforcing'.
@@ -208,7 +264,7 @@ class AbstractDistro(object):
             return RunGetOutput("getenforce")[1].startswith("Enforcing")
         else:
             return False
-        
+
     def setSelinuxEnforce(self,state):
         """
         Calls shell command 'setenforce' with 'state' and returns resulting exit code.
@@ -225,14 +281,14 @@ class AbstractDistro(object):
         """
         if self.isSelinuxSystem():
             return Run('chcon ' + cn + ' ' + path)
-        
+
     def setHostname(self,name):
         """
         Shell call to hostname.
         Returns resulting exit code.
         """
         return Run('hostname ' + name)
-        
+
     def publishHostname(self,name):
         """
         Set the contents of the hostname file to 'name'.
@@ -247,7 +303,7 @@ class AbstractDistro(object):
         except:
             return 1
         return r
-        
+
     def installAgentServiceScriptFiles(self):
         """
         Create the waagent support files for service installation.
@@ -263,7 +319,7 @@ class AbstractDistro(object):
         Abstract Virtual Function.  Over-ridden in concrete Distro classes.
         """
         pass
-    
+
     def uninstallAgentService(self):
         """
         Call service subsystem to remove waagent script.
@@ -277,19 +333,19 @@ class AbstractDistro(object):
         """
         self.stopAgentService()
         self.uninstallAgentService()
-    
+
     def startAgentService(self):
         """
         Service call to start the Agent service
         """
         return Run(self.service_cmd + ' ' + self.agent_service_name + ' start')
-        
+
     def stopAgentService(self):
         """
         Service call to stop the Agent service
         """
         return Run(self.service_cmd + ' '  + self.agent_service_name + ' stop',False)
-    
+
     def restartSshService(self):
         """
         Service call to re(start) the SSH service
@@ -312,7 +368,7 @@ class AbstractDistro(object):
             Error("Failed: " + fprint + ".crt -> " + path)
             error = 1
         return error
-    
+
     def checkPackageInstalled(self,p):
         """
         Query package database for prescence of an installed package.
@@ -323,6 +379,20 @@ class AbstractDistro(object):
     def checkPackageUpdateable(self,p):
         """
         Online check if updated package of walinuxagent is available.
+        Abstract Virtual Function.  Over-ridden in concrete Distro classes.
+        """
+        pass
+
+    def installPackage(self, package, forceReinstall):
+        """
+        Install the package for the machine.
+        Abstract Virtual Function.  Over-ridden in concrete Distro classes.
+        """
+        pass
+
+    def addPackageRepository(self, repository):
+        """
+        Add the repository for the machine.
         Abstract Virtual Function.  Over-ridden in concrete Distro classes.
         """
         pass
@@ -339,10 +409,37 @@ class AbstractDistro(object):
             self.setSelinuxContext(filepath,'system_u:object_r:shadow_t:s0')
         Log("Root password deleted.")
         return 0
-    
+
     def changePass(self,user,password):
-        return RunSendStdin("chpasswd",(user + ":" + password + "\n"))
-    
+        Log("Change user password")
+        crypt_id = Config.get("Provisioning.PasswordCryptId")
+        if crypt_id is None:
+            crypt_id = "6"
+
+        salt_len = Config.get("Provisioning.PasswordCryptSaltLength")
+        try:
+            salt_len = int(salt_len)
+            if salt_len < 0 or salt_len > 10:
+                salt_len = 10
+        except (ValueError, TypeError):
+            salt_len = 10
+
+        return self.chpasswd(user, password, crypt_id=crypt_id, 
+                             salt_len=salt_len)
+
+    def chpasswd(self, username, password, crypt_id=6, salt_len=10):
+        passwd_hash = self.gen_password_hash(password, crypt_id, salt_len)
+        cmd = "usermod -p '{0}' {1}".format(passwd_hash, username)
+        ret, output = RunGetOutput(cmd, log_cmd=False)
+        if ret != 0:
+            return "Failed to set password for {0}: {1}".format(username, output)
+
+    def gen_password_hash(self, password, crypt_id, salt_len):
+        collection = string.ascii_letters + string.digits
+        salt = ''.join(random.choice(collection) for _ in range(salt_len))
+        salt = "${0}${1}".format(crypt_id, salt)
+        return crypt.crypt(password, salt)
+
     def load_ata_piix(self):
         return WaAgent.TryLoadAtapiix()
 
@@ -351,7 +448,7 @@ class AbstractDistro(object):
         Generic function to remove ata_piix.ko.
         """
         return WaAgent.TryUnloadAtapiix()
-        
+
     def deprovisionWarnUser(self):
         """
         Generic user warnings used at deprovision.
@@ -373,7 +470,7 @@ class AbstractDistro(object):
             except:
                 pass
         return 0
-    
+
     def uninstallDeleteFiles(self):
         """
         Files to delete when agent is uninstalled.
@@ -384,7 +481,7 @@ class AbstractDistro(object):
             except:
                 pass
         return 0
-    
+
     def checkDependencies(self):
         """
         Generic dependency check.
@@ -438,8 +535,15 @@ class AbstractDistro(object):
     def GetInterfaceName(self):
         return GetFirstActiveNetworkInterfaceNonLoopback()[0]
 
-    def RestartInterface(self, iface):
-        Run("ifdown " + iface + " && ifup " + iface)
+    def RestartInterface(self, iface, max_retry=3):
+        for retry in range(1, max_retry + 1):
+            ret = Run("ifdown " + iface + " && ifup " + iface)
+            if ret == 0:
+                return
+            Log("Failed to restart interface: {0}, ret={1}".format(iface, ret))
+            if retry < max_retry:
+                Log("Retry restart interface in 5 seconds")
+                time.sleep(5)
 
     def CreateAccount(self,user, password, expiration, thumbprint):
         return CreateAccount(user, password, expiration, thumbprint)
@@ -499,13 +603,24 @@ class AbstractDistro(object):
                 if existingFS == "7" and fs != "ntfs":
                     Run("sfdisk -c " + device + " 1 83")
                     Run("mkfs." + fs + " " + partition)
+
+            Log("Mounting Resource Disk (" + partition + ").")
             if Run("mount " + partition + " " + mountpoint, chk_err=False):
-                #If mount failed, try to format the partition and mount again
-                Warn("Failed to mount resource disk. Retry mounting.")            
-                Run("mkfs." + fs + " " + partition + " -F")
-                if Run("mount " + partition + " " + mountpoint):
-                    Error("ActivateResourceDisk: Failed to mount resource disk (" + partition + ").")
-                    return
+                Warn("Failed to mount resource disk. Retry mounting after re-reading partition info.")
+                # Some kernels seem to issue an async partition re-read after a 'parted' command
+                # invocation. This causes mount to fail if the partition re-read isn't complete
+                # by the time mount is attempted. Seen in CentOS 7.2
+                # Force a sequential re-read of the partition and try mounting.
+                Run("sfdisk -R " + device)
+
+                if Run("mount " + partition + " " + mountpoint, chk_err=False):
+                    #If mount failed, try to format the partition and mount again
+                    Warn("Failed to mount resource disk. Will format " + partition + " and retry.")
+                    Run("mkfs." + fs + " " + partition + " -F")
+                    if Run("mount " + partition + " " + mountpoint):
+                        Error("ActivateResourceDisk: Failed to mount resource disk (" + partition + ").")
+                        return
+
             Log("Resource disk (" + partition + ") is mounted at " + mountpoint + " with fstype " + fs)
 
         #Create README file under the root of resource disk
@@ -520,7 +635,7 @@ class AbstractDistro(object):
         if os.path.isfile(mountpoint + "/swapfile") and os.path.getsize(mountpoint + "/swapfile") != (sizeKB * 1024):
             os.remove(mountpoint + "/swapfile")
         if not os.path.isfile(mountpoint + "/swapfile"):
-            Run("dd if=/dev/zero of=" + mountpoint + "/swapfile bs=1024 count=" + str(sizeKB))
+            Run("umask 0077 && dd if=/dev/zero of=" + mountpoint + "/swapfile bs=1024 count=" + str(sizeKB))
             Run("mkswap " + mountpoint + "/swapfile")
         if not Run("swapon " + mountpoint + "/swapfile"):
             Log("Enabled " + str(sizeKB) + " KB of swap at " + mountpoint + "/swapfile")
@@ -536,7 +651,7 @@ class AbstractDistro(object):
         if Run("LC_ALL=C fdisk -l " + dsk + " | grep Disk"):
             return False
         return True
-    
+
     def mountDVD(self,dvd,location):
         return RunGetOutput(self.mount_dvd_cmd + ' ' + dvd + ' ' + location)
 
@@ -572,7 +687,13 @@ class AbstractDistro(object):
             if(GetFileContents(filePath).splitlines()[0].rstrip() != timeout):
                 SetFileContents(filePath,timeout)
                 Log("SetBlockDeviceTimeout: Update the device " + device + " with timeout " + timeout)
-
+    
+    def waitFor3rdPartyProvision(self):
+        """
+        Provide ad dummy implement of 3rd party provision.
+        """
+        return
+    
     def waitForSshHostKey(self, path):
         """
         Provide a dummy waiting, since by default, ssh host key is created by waagent and the key
@@ -613,31 +734,147 @@ class AbstractDistro(object):
 
     def getConfigurationPath(self):
         return "/etc/waagent.conf"
-    
+
     def getProcessorCores(self):
         return int(RunGetOutput("grep 'processor.*:' /proc/cpuinfo |wc -l")[1])
-    
+
     def getTotalMemory(self):
         return int(RunGetOutput("grep MemTotal /proc/meminfo |awk '{print $2}'")[1])/1024
-    
+
     def getInterfaceNameByMac(self, mac):
         ret, output = RunGetOutput("ifconfig -a")
         if ret != 0:
             raise Exception("Failed to get network interface info")
-        match = re.search(r"(eth\d)[^\n]+HWaddr {0}".format(mac), output)
+        output = output.replace('\n', '')
+        match = re.search(r"(eth\d).*(HWaddr|ether) {0}".format(mac), 
+                          output, re.IGNORECASE)
         if match is None:
             raise Exception("Failed to get ifname with mac: {0}".format(mac))
-        return match.group(1)
+        output = match.group(0)
+        eths = re.findall(r"eth\d", output)
+        if eths is None or len(eths) == 0:
+            raise Exception("Failed to get ifname with mac: {0}".format(mac))
+        return eths[-1]
 
-    def configIpV4(self, ifName, addr):
+    def configIpV4(self, ifName, addr, netmask=24):
         ret, output = RunGetOutput("ifconfig {0} up".format(ifName))
         if ret != 0:
             raise Exception("Failed to bring up {0}: {1}".format(ifName, 
                                                                  output))
-        ret, output = RunGetOutput("ifconfig {0} {1}/24".format(ifName, addr))
+        ret, output = RunGetOutput("ifconfig {0} {1}/{2}".format(ifName, addr,
+                                                                 netmask))
         if ret != 0:
             raise Exception("Failed to config ipv4 for {0}: {1}".format(ifName, 
                                                                         output))
+
+    def setDefaultGateway(self, gateway):
+        addRouteResult = Run("/sbin/route add default gw " + gateway, chk_err=False)
+        Log("add default gateway result: {0}".format(addRouteResult))
+
+    def routeAdd(self, net, mask, gateway):
+        Run("/sbin/route add -net " + net + " netmask " + mask + " gw " + gateway,
+            chk_err=False)
+
+    def rdmaUpdate(self):
+        # give some time for the hv_hvp_daemon to start up.
+        time.sleep(10)
+        check_install_result = self.checkInstallKVPDaemon()
+        if(check_install_result == RdmaConfig.process_success):
+            # wait for sometime the RDMA Driver not passed in by KVP in time.
+            time.sleep(10)
+            nd_driver_version = self.getNdDriverVersion()
+            if(nd_driver_version is None):
+                raise RdmaError(RdmaConfig.driver_version_not_found)
+            else:
+                check_result = self.checkRDMA(nd_driver_version = nd_driver_version)
+                Log("RDMA version check result is " + str(check_result))
+                if(check_result == RdmaConfig.UpToDate):
+                    return
+                elif(check_result == RdmaConfig.OutOfDate):
+                    update_rdma_driver_result = self.rdmaUpdatePackage(host_version=nd_driver_version)
+                elif(check_result == RdmaConfig.DriverVersionNotFound):
+                    raise RdmaError(RdmaConfig.driver_version_not_found)
+                elif(check_result == RdmaConfig.Unknown):
+                    raise RdmaError(RdmaConfig.unknown_error)
+        else:
+            raise RdmaError(RdmaConfig.check_install_hv_utils_failed)
+
+    def getInstalledRdmaPackageFullName(self):
+        error, output = RunGetOutput(self.command_to_get_rdma_package_info)
+        if(error == RdmaConfig.process_success):
+            # first check whether installed, microsoft-hyper-v-rdma-4.0.11.142-20160201
+            return (RdmaConfig.Installed, output)
+        else:
+            Log(self.command_to_get_rdma_package_info + " failed, which can be due to the package not installed.")
+            return (RdmaConfig.NotInstalled, output)
+
+    def checkInstallKVPDaemon(self):
+        Log("check and install kvp daemon in abstract distro.")
+        return None
+
+    def getNdDriverVersion(self):
+        """
+        if error happens, raise a RdmaError
+        """
+        try:
+            ndDriverVersionHook = Config.get("Host.NdDriverVersion")
+            if(ndDriverVersionHook is not None and ndDriverVersionHook.strip() != ""):
+                return ndDriverVersionHook
+            else:
+                kvpReader = KVPReader()
+                keyValues = kvpReader.read_raw_kvp(0)
+                if keyValues is not None and keyValues.has_key("NdDriverVersion"):
+                    ndDriverVersion = keyValues["NdDriverVersion"]
+                    if(ndDriverVersion is None):
+                        Log("Error: NdDriverVersion not found.")
+                        return None
+                    else:
+                        if ndDriverVersion.find('.') != -1:
+                            ndDriverVersion = ndDriverVersion.split('.')[0]
+                        return ndDriverVersion
+        except Exception as e:
+            errMsg = 'Cannot update status: Failed to enable the extension with error: %s, stack trace: %s' % (str(e), traceback.format_exc())
+            Log(errMsg)
+            raise RdmaError(RdmaConfig.nd_driver_detect_error)
+
+    def checkRDMA(self, nd_driver_version = None):
+        if(nd_driver_version is None):
+            nd_driver_version = self.getNdDriverVersion()
+        if(nd_driver_version is None or nd_driver_version == ""):
+            return RdmaConfig.DriverVersionNotFound
+        installation_status,package_fullname = self.getInstalledRdmaPackageFullName()
+        # this can be an issue. the RdmaPackageVersion is None means what?
+        if(installation_status == RdmaConfig.NotInstalled):
+            return RdmaConfig.OutOfDate
+        elif(package_fullname is None or package_fullname == ""):
+            return RdmaConfig.OutOfDate
+        else:
+            # package_fullname would be like this :microsoft-hyper-v-rdma-4.0.11.142-20160201.x86_64
+            # nd_driver_version 140
+            Log("nd_driver_version is " + str(nd_driver_version) + " package_fullname is " + str(package_fullname))
+            if(nd_driver_version is not None):
+                r = re.match(self.rdma_version_match_pattern % nd_driver_version, package_fullname)# NdDriverVersion should be at the end of package version
+                if not r :	#host ND version is not the same as the package version, do an update
+                    return RdmaConfig.OutOfDate
+                else:
+                    return RdmaConfig.UpToDate
+            return RdmaConfig.Unknown
+
+    def rdmaUpdatePackage(self, host_version):
+        # refresh the repository first
+        #install the wrapper package, that will put the driver RPM packages under /opt/microsoft/rdma
+        self.refreshRepository()
+        package = {"Name":self.rdma_wrapper_package_name}
+        self.installPackage(package, True)
+        self.installRdmaDrivers(host_version)
+
+    def installRdmaDrivers(self, host_version):
+        Log("install rdma drivers in abstract distro.")
+        pass
+
+    def rebootMachine(self):
+        Log("rebooting the machine")
+        RunGetOutput(self.reboot_path)
 
 ############################################################
 #	GentooDistro
@@ -649,7 +886,7 @@ command=/usr/sbin/waagent
 pidfile=/var/run/waagent.pid
 command_args=-daemon
 command_background=true
-name="Windows Azure Linux Agent"
+name="Azure Linux Agent"
 
 depend()
 {
@@ -659,6 +896,7 @@ depend()
 }
 
 """
+
 class gentooDistro(AbstractDistro):
     """
     Gentoo distro concrete class
@@ -672,7 +910,7 @@ class gentooDistro(AbstractDistro):
         self.dhcp_client_name='dhcpcd'
         self.shadow_file_mode=0640
         self.init_file=gentoo_init_file
-        
+
     def publishHostname(self,name):
         try:
             if (os.path.isfile(self.hostname_file_path)):
@@ -718,7 +956,7 @@ class gentooDistro(AbstractDistro):
 suse_init_file = """\
 #! /bin/sh
 #
-# Windows Azure Linux Agent sysV init script
+# Azure Linux Agent sysV init script
 #
 # Copyright 2013 Microsoft Corporation
 # Copyright SUSE LLC
@@ -744,12 +982,12 @@ suse_init_file = """\
 # System startup script for the waagent
 #
 ### BEGIN INIT INFO
-# Provides: WindowsAzureLinuxAgent
+# Provides: AzureLinuxAgent
 # Required-Start: $network sshd
 # Required-Stop: $network sshd
 # Default-Start: 3 5
 # Default-Stop: 0 1 2 6
-# Description: Start the WindowsAzureLinuxAgent
+# Description: Start the AzureLinuxAgent
 ### END INIT INFO
 
 PYTHON=/usr/bin/python
@@ -782,14 +1020,14 @@ rc_reset
 
 case "$1" in
     start)
-        echo -n "Starting WindowsAzureLinuxAgent"
+        echo -n "Starting AzureLinuxAgent"
         ## Start daemon with startproc(8). If this fails
         ## the echo return value is set appropriate.
         startproc -f ${PYTHON} ${WAZD_BIN} -daemon
         rc_status -v
         ;;
     stop)
-        echo -n "Shutting down WindowsAzureLinuxAgent"
+        echo -n "Shutting down AzureLinuxAgent"
         ## Stop daemon with killproc(8) and if this fails
         ## set echo the echo return value.
         killproc -p ${WAZD_PIDFILE} ${PYTHON} ${WAZD_BIN}
@@ -813,7 +1051,7 @@ case "$1" in
         rc_status
         ;;
     status)
-        echo -n "Checking for service WindowsAzureLinuxAgent "
+        echo -n "Checking for service AzureLinuxAgent "
         ## Check status with checkproc(8), if process is running
         ## checkproc will return with exit status 0.
 
@@ -836,21 +1074,46 @@ class SuSEDistro(AbstractDistro):
     """
     def __init__(self):
         super(SuSEDistro,self).__init__()
-        self.service_cmd='/sbin/service'
-        self.ssh_service_name='sshd'
-        self.kernel_boot_options_file='/boot/grub/menu.lst'
-        self.hostname_file_path='/etc/HOSTNAME'
-        self.requiredDeps += [ "/sbin/insserv" ]
-        self.init_file=suse_init_file
-        self.dhcp_client_name='dhcpcd'
-        if ((DistInfo(fullname=1)[0] == 'SUSE Linux Enterprise Server' and DistInfo()[1] >= '12') or \
-            (DistInfo(fullname=1)[0] == 'openSUSE'                     and DistInfo()[1] >= '13.2')):
-            self.dhcp_client_name='wickedd-dhcp4'
+        dist_info = DistInfo()
+        dist_info_fullname = DistInfo(fullname=1)
+
+        self.dhcp_client_name = 'dhcpcd'
+        if ((dist_info_fullname[0] == 'SUSE Linux Enterprise Server' and dist_info[1] >= '12') or \
+            (dist_info_fullname[0] == 'openSUSE'                     and dist_info[1] >= '13.2')):
+            self.dhcp_client_name = 'wickedd-dhcp4'
+        self.dhcp_enabled = True
         self.grubKernelBootOptionsFile = '/boot/grub/menu.lst'
         self.grubKernelBootOptionsLine = 'kernel'
-        self.getpidcmd='pidof '
-        self.dhcp_enabled=True
-        
+        self.getpidcmd = 'pidof '
+        self.hostname_file_path = '/etc/HOSTNAME'
+        self.init_file = suse_init_file
+        self.kernel_boot_options_file = '/boot/grub/menu.lst'
+        self.modprobe_path = '/usr/bin/modprobe'
+
+        self.requiredDeps += [ "/sbin/insserv" ]
+        self.reboot_path = '/sbin/reboot'
+        self.rpm_path = '/bin/rpm'
+        self.service_cmd = '/sbin/service'
+        self.ssh_service_name ='sshd'
+
+        if(dist_info[1] == "11"):
+            self.ps_path = '/bin/ps'
+        else:
+            self.ps_path = '/usr/bin/ps'
+        self.zypper_path = '/usr/bin/zypper'
+        # this is the patter to extract the Version info of the rdma package.
+        self.hv_kvp_daemon_service_process_name = "hv_kvp_daemon"
+        self.rdma_wrapper_package_name = 'msft-rdma-drivers'
+        # this is used for judge whether the current package matches with the host driver.
+        self.rdma_package_name = 'msft-lis-rdma-kmp-default'
+        self.hyper_v_package_name = "hyper-v"
+        self.rdma_version_match_pattern = self.rdma_package_name + '-[0-9]+[.](%s).+'
+        self.command_to_get_rdma_package_info = self.rpm_path + " -q " + self.rdma_package_name
+        self.command_to_detect_kvp_daemon_package = self.rpm_path + " -q " + self.hyper_v_package_name
+        self.command_to_install_kvp_daemon_package = self.zypper_path + " -n install --force " + self.hyper_v_package_name
+        self.command_to_remove_rdma_user_mode_package = self.zypper_path + " -n remove " + self.rdma_package_name
+        self.command_to_install_rdma_user_mode_package = self.zypper_path + " -n install --force /opt/microsoft/rdma/%s"
+
     def checkPackageInstalled(self,p):
         if Run("rpm -q " + p,chk_err=False):
             return 0
@@ -862,7 +1125,41 @@ class SuSEDistro(AbstractDistro):
             return 1
         else:
             return 0
-        
+
+    def refreshRepository(self):
+        command_to_refresh_repository = self.zypper_path + " --no-gpg-checks refresh"
+        error,output = RunGetOutput(command_to_refresh_repository)
+        Log("refreshRepository result is is there already, so skip add%s output is %s " % (str(error),str(output)))
+
+    def addPackageRepository(self, repository):
+        if repository is not None:
+            error,output = RunGetOutput(self.zypper_path + " lr -u")
+            rdma_pack_result = re.search(repository["Name"], output)
+            if rdma_pack_result is None :
+                Log("repository with name %s is not found" % repository["Name"])
+                gpgCheckFlag = '-g'
+                if repository.has_key("GpgCheck") and repository["GpgCheck"] == 'n':
+                    gpgCheckFlag = '-G'
+                command_to_add_repository = self.zypper_path + " ar " + gpgCheckFlag + " " + str(repository["Url"]) + " " + repository["Name"]
+                error, output = RunGetOutput(command_to_add_repository)
+                #wait for the cache build.
+                Log("error result is " + str(error) + " output is : " + str(output))
+            else:
+                Log("output is: " + str(output))
+                Log(repository["Name"] + " is their already, so skip add.")
+        else:
+            Log("repository to add is none")
+
+    def installPackage(self, package, forceReinstall):
+        if forceReinstall or self.checkPackageInstalled(package["Name"]) == 0:
+            command_to_remove_package = self.zypper_path + " --non-interactive remove " + package["Name"]
+            error,output = RunGetOutput(command_to_remove_package)
+            Log("remove package %s return code is %s and output is %s " % (package["Name"], str(error), str(output)))
+            command_to_install_package = self.zypper_path + " --non-interactive install --force " + package["Name"]
+            error,output = RunGetOutput(command_to_install_package)
+            Log("install package %s return code is %s and output is %s " % (package["Name"], str(error), str(output)))
+        else:
+            Log("package %s is already installed" % package["Name"])
 
     def installAgentServiceScriptFiles(self):
         try:
@@ -870,7 +1167,7 @@ class SuSEDistro(AbstractDistro):
             os.chmod(self.init_script_file, 0744)
         except:
             pass
-        
+
     def registerAgentService(self):
         self.installAgentServiceScriptFiles()
         return Run('insserv ' + self.agent_service_name)
@@ -887,7 +1184,52 @@ class SuSEDistro(AbstractDistro):
 
     def stopDHCP(self):
         Run("service " + self.dhcp_client_name + " stop", chk_err=False)
-    
+
+    def checkInstallKVPDaemon(self):
+        error, output = RunGetOutput(self.ps_path + " -ef")
+        if(error != RdmaConfig.process_success):
+            return RdmaConfig.common_failed
+        else:
+            r = re.search(self.hv_kvp_daemon_service_process_name, output)
+            if r is None :
+                Log("hv kvp daemon is not running.")
+                error,output = RunGetOutput(self.command_to_detect_kvp_daemon_package, chk_err=False,log_cmd=False)
+                if(error == RdmaConfig.process_success):
+                    Log("the hyper-v package is installed, but hv_kvp_daemon not started")
+                    return RdmaConfig.hv_kvp_daemon_not_started
+                else:
+                    error,output = RunGetOutput(self.command_to_install_kvp_daemon_package)
+                    Log("install hyper-v return code: " + str(error) + " output:" + str(output))
+                    if(error != RdmaConfig.process_success):
+                        return RdmaConfig.common_failed
+                    else:
+                        self.rebootMachine()
+                        return RdmaConfig.process_success
+            else :
+                Log("KVP daemon is running")
+                return RdmaConfig.process_success
+
+    def installRdmaDrivers(self, host_version):
+        if not os.path.exists("/opt/microsoft/rdma"):
+            raise RdmaError(RdmaConfig.package_not_found)
+        else:
+            r = os.listdir("/opt/microsoft/rdma")
+            if r is not None :
+                for filename in r :
+                    if re.match(self.rdma_package_name + "-\d{8}\.(%s).+" % host_version, filename) :
+                        error, output = RunGetOutput(self.command_to_remove_rdma_user_mode_package)
+                        Log("remove rdma package result is " + str(error) + " output is: " + str(output))
+                        Log("Installing RPM /opt/microsoft/rdma/" + filename)
+                        error, output = RunGetOutput(self.command_to_install_rdma_user_mode_package % filename)
+                        Log("Install rdma package result is " + str(error) + " output is: " + str(output))
+                        if(error == RdmaConfig.process_success):
+                            self.rebootMachine()
+                        else:
+                            raise RdmaError(RdmaConfig.package_install_failed)
+            else:
+                Log("RDMA drivers not found in /opt/microsoft/rdma")
+                raise RdmaError(RdmaConfig.package_not_found)
+
 ############################################################    
 #	redhatDistro
 ############################################################    
@@ -895,17 +1237,17 @@ class SuSEDistro(AbstractDistro):
 redhat_init_file= """\
 #!/bin/bash
 #
-# Init file for WindowsAzureLinuxAgent.
+# Init file for AzureLinuxAgent.
 #
 # chkconfig: 2345 60 80
-# description: WindowsAzureLinuxAgent
+# description: AzureLinuxAgent
 #
 
 # source function library
 . /etc/rc.d/init.d/functions
 
 RETVAL=0
-FriendlyName="WindowsAzureLinuxAgent"
+FriendlyName="AzureLinuxAgent"
 WAZD_BIN=/usr/sbin/waagent
 
 start()
@@ -948,7 +1290,6 @@ case "$1" in
 esac
 exit $RETVAL
 """
-
 class redhatDistro(AbstractDistro):
     """
     Redhat Distro concrete class
@@ -987,14 +1328,14 @@ class redhatDistro(AbstractDistro):
     def registerAgentService(self):
         self.installAgentServiceScriptFiles()
         return Run('chkconfig --add waagent')
-   
+
     def uninstallAgentService(self):
         return Run('chkconfig --del ' + self.agent_service_name)
 
     def unregisterAgentService(self):
         self.stopAgentService()
         return self.uninstallAgentService()
-    
+
     def checkPackageInstalled(self,p):
         if Run("yum list installed " + p,chk_err=False):
             return 0
@@ -1007,7 +1348,24 @@ class redhatDistro(AbstractDistro):
         else:
             return 0
 
-
+    def checkDependencies(self):
+        """
+        Generic dependency check.
+        Return 1 unless all dependencies are satisfied.
+        """
+        if DistInfo()[1] < '7.0' and self.checkPackageInstalled('NetworkManager'):
+            Error(GuestAgentLongName + " is not compatible with network-manager.")
+            return 1
+        try:
+            m= __import__('pyasn1')
+        except ImportError:
+            Error(GuestAgentLongName + " requires python-pyasn1 for your Linux distribution.")
+            return 1
+        for a in self.requiredDeps:
+            if Run("which " + a + " > /dev/null 2>&1",chk_err=False):
+                Error("Missing required dependency: " + a)
+                return 1
+        return 0	
 
 ############################################################    
 #	centosDistro
@@ -1020,7 +1378,470 @@ class centosDistro(redhatDistro):
     """
     def __init__(self):
         super(centosDistro,self).__init__()
+        self.dist_info = DistInfo()
+        if(self.dist_info[1].startswith("6.")):
+            self.ps_path = '/bin/ps'
+            self.rpm_path = '/bin/rpm'
+            self.reboot_path = '/sbin/reboot'
+        else:
+            self.ps_path = '/usr/bin/ps'
+            self.rpm_path = '/usr/bin/rpm'
+            self.reboot_path = '/usr/sbin/reboot'
 
+        # this is the patter to extract the Version info of the rdma package.
+        self.yum_path = '/usr/bin/yum'
+        ############################### check the package names
+        self.rdma_wrapper_package_name = 'msft-rdma-drivers'
+        # this is used for judge whether the current package matches with the host driver.
+        self.rdma_user_mode_package_name = 'microsoft-hyper-v-rdma'
+        #microsoft-hyper-v-rdma-4.0.11.142-20160201.x86_64
+        self.rdma_version_match_pattern = self.rdma_user_mode_package_name + '-(\d+\.)+(%s)' 
+        self.rdma_kernel_mode_package_name = 'kmod-microsoft-hyper-v-rdma'
+        self.command_to_get_rdma_package_info = self.rpm_path + " -q " + self.rdma_user_mode_package_name
+        # hyperv-daemons
+        self.hv_kvp_daemon_service_process_name = 'hypervkvpd'
+        self.hv_kvp_daemon_service_process_name_new = 'hv_kvp_daemon'
+        self.hyper_v_package_name = "hypervkvpd"
+        self.hyper_v_package_name_new = "microsoft-hyper-v"
+        self.rdma_pack_repository_name = "msft-rdma-pack"
+        self.command_to_detect_kvp_daemon_package = self.rpm_path + " -q " + self.hyper_v_package_name
+        self.command_to_erase_kvp_daemon_package = self.yum_path + " erase -q -y " + self.hyper_v_package_name
+        self.command_to_install_kvp_daemon_package = self.yum_path + " install -q -y " + self.hyper_v_package_name
+        self.command_to_detect_kvp_daemon_package_new = self.rpm_path + " -q " + self.hyper_v_package_name_new
+        self.command_to_erase_kvp_daemon_package_new = self.yum_path + " erase -q -y " + self.hyper_v_package_name_new
+        self.command_to_remove_rdma_user_mode_package = self.yum_path + " erase -q -y " + self.rdma_user_mode_package_name
+        self.command_to_install_rdma_user_mode_package = self.yum_path + " install -q -y %s/%s"
+        self.command_to_remove_rdma_kmod_package = self.yum_path + " erase -q -y " + self.rdma_kernel_mode_package_name
+        self.command_to_install_rdma_kmod_package = self.yum_path + " install -q -y %s/%s"
+
+    def installPackage(self, package, forceReinstall):
+        if forceReinstall or self.checkPackageInstalled(package["Name"]) == 0:
+            command_to_remove_package = self.yum_path + " erase -q -y " + package["Name"]
+            error,output = RunGetOutput(command_to_remove_package)
+            Log("remove package %s return code is %s and output is %s " % (package["Name"], str(error) , str(output)))
+            command_to_install_package = self.yum_path + " install -q -y " + package["Name"]
+            error,output = RunGetOutput(command_to_install_package)
+            Log("install package %s return code is %s and output is %s " % (package["Name"], str(error) , str(output)))
+            command_to_install_package = self.yum_path + " install -q -y " + package["Name"]
+        else:
+            Log("package %s is already installed " % package["Name"])
+
+    def refreshRepository(self):
+        command_to_clean_cache = self.yum_path + " clean all"
+        error,output = RunGetOutput(command_to_clean_cache)
+        Log("clean repository cache result is %s output is %s " % (str(error) ,str(output)))
+        command_to_refresh_repository = self.yum_path + " updateinfo"
+        error,output = RunGetOutput(command_to_refresh_repository)
+        Log("refreshRepository result is %s output is %s " % (str(error) ,str(output)))
+
+    def addPackageRepository(self, repository):
+        #return self.yum_config_manager + " --add-repo=/etc/yum.repos.d/" + repo_file_path
+        if(repository is not None):
+            repo_file_path = "/etc/yum.repos.d/" + repository["Name"] + ".repo"
+            if(not os.path.exists(repo_file_path)):
+                Log("repository with name %s is not found" % repository["Name"])
+                gpgCheckFlag = '1'
+                if repository.has_key("GpgCheck") and repository["GpgCheck"] == 'n':
+                    gpgCheckFlag = '0'
+                repo_content = "[" + repository["Name"] + "]\n"\
+                                + "name=" + repository["Name"] + "\n"\
+                                + "baseurl=" + repository["Url"] + "\nenabled=1\n"\
+                                + "gpgcheck=" + gpgCheckFlag + "\n"
+                with open(repo_file_path, "wb+") as F :
+                    F.write(repo_content)
+            else:
+                Log(repository["Name"] + " is there already, so skip add.")
+        else:
+            Log("repository to add is none")
+
+    def checkInstallKVPDaemon(self):
+        # for centos, the hypervkvpd and the hv_kvp_daemon both are ok.
+        error, output = RunGetOutput(self.ps_path + " -ef")
+        if(error != RdmaConfig.process_success):
+            return RdmaConfig.common_failed
+        else:
+            r = re.search(self.hv_kvp_daemon_service_process_name, output)
+            r2 = re.search(self.hv_kvp_daemon_service_process_name_new, output)
+            if (r is None and r2 is None):
+                Log("hv kvp daemon is not running.")
+                error,output = RunGetOutput(self.command_to_detect_kvp_daemon_package, chk_err=False,log_cmd=False)
+                if(error == RdmaConfig.process_success):
+                    Log("the package:" + self.hyper_v_package_name + " is installed, but kvp daemon not started")
+                    return RdmaConfig.hv_kvp_daemon_not_started
+                else:
+                    error,output = RunGetOutput(self.command_to_detect_kvp_daemon_package_new, chk_err=False,log_cmd=False)
+                    if(error == RdmaConfig.process_success):
+                        Log("the package:" + self.command_to_detect_kvp_daemon_package_new + "is installed, but kvp daemon not started")
+                        return RdmaConfig.hv_kvp_daemon_not_started
+                    else:
+                        error,output = RunGetOutput(self.command_to_install_kvp_daemon_package)
+                        Log(self.command_to_install_kvp_daemon_package + " return code: " + str(error) + " output:" + str(output))
+                        if(error != RdmaConfig.process_success):
+                            return RdmaConfig.common_failed
+                        else:
+                            self.rebootMachine()
+                            return RdmaConfig.process_success
+            else :
+                Log("KVP daemon is running")
+                return RdmaConfig.process_success
+
+    def installRdmaDrivers(self, host_version):
+        Log("" + self.dist_info[0] + "#" + self.dist_info[1])
+        version_str = self.dist_info[1]
+        major_version = version_str[0]
+        minor_version = version_str[2]
+        extracted_folder = "/opt/microsoft/rdma/rhel{0}{1}".format(major_version,minor_version)
+        if not os.path.exists(extracted_folder):
+            Log("the folder not exists {0}".format(extracted_folder))
+            raise RdmaError(RdmaConfig.package_not_found)
+        else:
+            file_list = os.listdir(extracted_folder)
+            # we uninstall the standard hyper-v user mode package first.
+            error, output = RunGetOutput(self.command_to_detect_kvp_daemon_package)
+            if(error == RdmaConfig.process_success):
+                error, output = RunGetOutput(self.command_to_erase_kvp_daemon_package)
+                if(error != RdmaConfig.process_success):
+                    Log(self.command_to_erase_kvp_daemon_package + " executed failed")
+                else:
+                    Log(self.command_to_erase_kvp_daemon_package + "done")
+            else:
+                Log(self.command_to_detect_kvp_daemon_package + " do not return process_success")
+            error, output = RunGetOutput(self.command_to_detect_kvp_daemon_package_new)
+            if(error == RdmaConfig.process_success):
+                error, output = RunGetOutput(self.command_to_erase_kvp_daemon_package_new)
+                if(error != RdmaConfig.process_success):
+                    Log(self.command_to_erase_kvp_daemon_package_new + " executed failed")
+                else:
+                    Log(self.command_to_erase_kvp_daemon_package_new + " done")
+            else:
+                Log(self.command_to_detect_kvp_daemon_package_new + " do not return process_success")
+            if file_list is not None :
+                installed = False
+                for filename in file_list :
+                    #first uninstall the rdma_kernel_mode_package_name
+                    #kmod-microsoft-hyper-v-rdma-X.X.X.<NDVERSION>-DDDDDDDD.x86_64.rpm
+                    r = re.match((self.rdma_kernel_mode_package_name + "-(\d+\.)+(%s)-\d{8}\.x86_64.rpm") % host_version, filename)
+                    if r:
+                        error, output = RunGetOutput(self.command_to_remove_rdma_kmod_package)
+                        Log("remove kmod-microsoft-hyper-v-rdma package result is " + str(error) + " output is: " + str(output))
+                        Log("Installing RPM " + extracted_folder + "/" + filename)
+                        error, output = RunGetOutput(self.command_to_install_rdma_kmod_package % (extracted_folder, filename))
+                        Log("Install kmod-microsoft-hyper-v-rdma package result is " + str(error) + " output is: " + str(output))
+                        if(error != RdmaConfig.process_success):
+                            raise RdmaError(RdmaConfig.package_install_failed)
+                        else:
+                            installed = True
+                for filename in file_list :
+                    #first uninstall the rdma_user_mode_package_name
+                    #microsoft-hyper-v-rdma-X.X.X.<NDVERSION>-DDDDDDDD.x86_64.rpm
+                    r = re.match((self.rdma_user_mode_package_name + "-(\d+\.)+(%s)-\d{8}\.x86_64.rpm") % host_version, filename)
+                    if r:
+                        error, output = RunGetOutput(self.command_to_remove_rdma_user_mode_package)
+                        Log("remove microsoft-hyper-v-rdma package result is " + str(error) + " output is: " + str(output))
+                        Log("Installing RPM " + extracted_folder + "/" + filename)
+                        error, output = RunGetOutput(self.command_to_install_rdma_user_mode_package % (extracted_folder,filename))
+                        Log("Install microsoft-hyper-v-rdma package result is " + str(error) + " output is: " + str(output))
+                        if(error != RdmaConfig.process_success):
+                            raise RdmaError(RdmaConfig.package_install_failed)
+                        else:
+                            installed = True
+                if(installed):
+                    self.rebootMachine()
+                else:
+                    Log("no rdma package is installed.")
+            else:
+                Log("RDMA drivers not found in /opt/microsoft/rdma")
+                raise RdmaError(RdmaConfig.package_not_found)
+
+############################################################    
+#	oracleDistro
+############################################################    
+
+class oracleDistro(redhatDistro):
+    """
+    Oracle Distro concrete class
+    Put Oracle specific behavior here...
+    """
+    def __init__(self):
+        super(oracleDistro, self).__init__()
+
+############################################################    
+#	asianuxDistro
+############################################################    
+
+class asianuxDistro(redhatDistro):
+    """
+    Asianux Distro concrete class
+    Put Asianux specific behavior here...
+    """
+    def __init__(self):
+        super(asianuxDistro,self).__init__()
+
+############################################################
+#       NixOSDistro
+############################################################
+
+class NixOSDistro(AbstractDistro):
+    """
+    NixOS Distro concrete class
+    Put NixOS specific behavior here...
+    """
+    def __init__(self):
+        super(NixOSDistro,self).__init__()
+        global RulesFiles
+        RulesFiles = []
+        EtcDhcpClientConfFiles = []
+        # configs are deleted by NixOS
+        self.agent_files_to_uninstall = []
+        self.dhcp_client_name = "dhcpcd"
+        self.dhcp_enabled=True
+        self.fileBlackList = [ "/root/.bash_history" "/etc/machine-id" ]
+        self.requiredDeps.extend([ "mount", "umount", "pidof", "hostname", "systemctl" ])
+        self.requiredDeps.remove('sed')
+        if "--part-type" in RunGetOutput("sfdisk --help")[1]:
+            self.sfdisk_cmd = "sfdisk -q --part-type "
+        else:
+            self.sfdisk_cmd = "sfdisk -q -c "
+
+    def restartService(self, name):
+        return Run("systemctl restart " + name)
+
+    def checkPackageInstalled(self,p):
+        """
+        The only way to install waagent in NixOS is via system config.
+        Return 1 since it must be preinstalled.
+        """
+        return 1
+
+    def installAgentServiceScriptFiles(self):
+        """
+        The only way to install waagent in NixOS is via system config.
+        Return 1 since it must be preinstalled.
+        """
+        return 1
+
+    def registerAgentService(self):
+        """
+        The only way to install waagent in NixOS is via system config.
+        Return 1 since it must be preinstalled.
+        """
+        return 1
+
+    def uninstallAgentService(self):
+        """
+        The only way to uninstall waagent in NixOS is via system config.
+        """
+        return 1
+
+    def unregisterAgentService(self):
+        """
+        The only way to uninstall waagent in NixOS is via system config.
+        """
+        return 1
+
+    def startAgentService(self):
+        return Run("systemctl start waagent")
+
+    def stopAgentService(self):
+        return Run("systemctl stop waagent")
+
+    def restartSshService(self):
+        """
+        Restart the SSH daemon service if it isn't configured as socket-activated
+        """
+        return self.restartService("sshd")
+
+    def sshDeployPublicKey(self,fprint,path):
+        """
+        We support PKCS8.
+        """
+        if Run("ssh-keygen -i -m PKCS8 -f " + fprint + " >> " + path):
+            return 1
+        else :
+            return 0
+
+    def checkPackageUpdateable(self,p):
+        """
+        Packages can only be updated via system config in NixOS.
+        Return 0 since waagent can't update packages.
+        """
+        return 0
+
+    def deleteRootPassword(self):
+        return Run("usermod root -p '!'")
+
+    def load_ata_piix(self):
+        """
+        ata_piix module (un)loading is handled by the NixOS waagent service.
+        """
+        return 0
+
+    def unload_ata_piix(self):
+        """
+        ata_piix module (un)loading is handled by the NixOS waagent service.
+        """
+        return 0
+
+    def deprovisionWarnUser(self):
+        return
+
+    def checkDependencies(self):
+        """
+        Since the waagent service is installed via system config in NixOS,
+        all dependencies are satisfied.
+        """
+        return 1
+
+    def RestartInterface(self, iface):
+        self.restartService(self.dhcp_client_name)
+
+    def Install(self):
+        """
+        Packages must be installed via system config in NixOS.
+        """
+        return 1
+
+    def stopDHCP(self):
+        Run("systemctl stop " + self.dhcp_client_name)
+    def startDHCP(self):
+        Run("systemctl start " + self.dhcp_client_name)
+
+    def setDefaultGateway(self, gateway):
+        addRouteResult = Run("route add default gw " + gateway, chk_err=False)
+        Log("add default gateway result: {0}".format(addRouteResult))
+
+    def routeAdd(self, net, mask, gateway):
+        Run("route add -net " + net + " netmask " + mask + " gw " + gateway,
+            chk_err=False)
+
+    def CreateAccount(self,user, password, expiration, thumbprint):
+        """
+        Create a user account, with 'user', 'password', 'expiration',
+        ssh keys, and sudo permissions.
+        Returns None if successful, error string on failure.
+        """
+        userentry = None
+        try:
+            userentry = pwd.getpwnam(user)
+        except:
+            pass
+        uidmin = None
+        try:
+            uidmin = int(GetLineStartingWith("UID_MIN", "/etc/login.defs").split()[1])
+        except:
+            pass
+        if uidmin == None:
+            uidmin = 100
+        if userentry != None and userentry[2] < uidmin:
+            Error("CreateAccount: " + user + " is a system user. Will not set password.")
+            return "Failed to set password for system user: " + user + " (0x06)."
+        if userentry == None:
+            command = "useradd -m " + user
+            if expiration != None:
+                command += " -e " + expiration.split('.')[0]
+            if Run(command):
+                Error("Failed to create user account: " + user)
+                return "Failed to create user account: " + user + " (0x07)."
+        else:
+            Log("CreateAccount: " + user + " already exists. Will update password.")
+        if password != None:
+            MyDistro.changePass(user, password)
+        Run('usermod ' + user + ' -G wheel')
+        home = MyDistro.GetHome()
+        if thumbprint != None:
+            dir = home + "/" + user + "/.ssh"
+            CreateDir(dir, user, 0700)
+            pub = dir + "/id_rsa.pub"
+            prv = dir + "/id_rsa"
+            Run("ssh-keygen -y -f " + thumbprint + ".prv > " + pub)
+            SetFileContents(prv, GetFileContents(thumbprint + ".prv"))
+            for f in [pub, prv]:
+                os.chmod(f, 0600)
+                ChangeOwner(f, user)
+            SetFileContents(dir + "/authorized_keys", GetFileContents(pub))
+            ChangeOwner(dir + "/authorized_keys", user)
+        Log("Created user account: " + user)
+        return None
+
+    def ActivateResourceDisk(self):
+        """
+        Format, mount, and if specified in the configuration
+        set resource disk as swap.
+        """
+        global DiskActivated
+        format = Config.get("ResourceDisk.Format")
+        if format == None or format.lower().startswith("n"):
+            DiskActivated = True
+            return
+        device = DeviceForIdePort(1)
+        if device == None:
+            Error("ActivateResourceDisk: Unable to detect disk topology.")
+            return
+        device = "/dev/" + device
+
+        mountlist = RunGetOutput("mount")[1]
+        mountpoint = GetMountPoint(mountlist, device)
+
+        if(mountpoint):
+            Log("ActivateResourceDisk: " + device + "1 is already mounted.")
+        else:
+            mountpoint = Config.get("ResourceDisk.MountPoint")
+            if mountpoint == None:
+                mountpoint = "/mnt/resource"
+            CreateDir(mountpoint, "root", 0755)
+            fs = Config.get("ResourceDisk.Filesystem")
+            if fs == None:
+                fs = "ext3"
+
+            partition = device + "1"
+
+            #Check partition type
+            Log("Detect GPT...")
+            ret = RunGetOutput("parted {0} print".format(device))
+            if ret[0] == 0 and "gpt" in ret[1]:
+                Log("GPT detected.")
+                #GPT(Guid Partition Table) is used.
+                #Get partitions.
+                parts = filter(lambda x : re.match("^\s*[0-9]+", x), ret[1].split("\n"))
+                #If there are more than 1 partitions, remove all partitions
+                #and create a new one using the entire disk space.
+                if len(parts) > 1:
+                    for i in range(1, len(parts) + 1):
+                        Run("parted {0} rm {1}".format(device, i))
+                    Run("parted {0} mkpart primary 0% 100%".format(device))
+                    Run("mkfs." + fs + " " + partition + " -F")
+            else:
+                existingFS = RunGetOutput(self.sfdisk_cmd + device + " 1", chk_err=False)[1].strip()
+                if existingFS == "7" and fs != "ntfs":
+                    Run(self.sfdisk_cmd + device + " 1 83")
+                    Run("mkfs." + fs + " " + partition)
+            if Run("mount " + partition + " " + mountpoint, chk_err=False):
+                #If mount failed, try to format the partition and mount again
+                Warn("Failed to mount resource disk. Retry mounting.")
+                Run("mkfs." + fs + " " + partition + " -F")
+                if Run("mount " + partition + " " + mountpoint):
+                    Error("ActivateResourceDisk: Failed to mount resource disk (" + partition + ").")
+                    return
+            Log("Resource disk (" + partition + ") is mounted at " + mountpoint + " with fstype " + fs)
+
+        #Create README file under the root of resource disk
+        SetFileContents(os.path.join(mountpoint,README_FILENAME), README_FILECONTENT)
+        DiskActivated = True
+
+        #Create swap space
+        swap = Config.get("ResourceDisk.EnableSwap")
+        if swap == None or swap.lower().startswith("n"):
+            return
+        sizeKB = int(Config.get("ResourceDisk.SwapSizeMB")) * 1024
+        if os.path.isfile(mountpoint + "/swapfile") and os.path.getsize(mountpoint + "/swapfile") != (sizeKB * 1024):
+            os.remove(mountpoint + "/swapfile")
+        if not os.path.isfile(mountpoint + "/swapfile"):
+            Run("dd if=/dev/zero of=" + mountpoint + "/swapfile bs=1024 count=" + str(sizeKB))
+            Run("mkswap " + mountpoint + "/swapfile")
+        if not Run("swapon " + mountpoint + "/swapfile"):
+            Log("Enabled " + str(sizeKB) + " KB of swap at " + mountpoint + "/swapfile")
+        else:
+            Error("ActivateResourceDisk: Failed to activate swap at " + mountpoint + "/swapfile")
 
 ############################################################
 #   CoreOSDistro
@@ -1130,7 +1951,7 @@ class CoreOSDistro(AbstractDistro):
         else:
             Log("CreateAccount: " + user + " already exists. Will update password.")
         if password != None:
-            RunSendStdin("chpasswd", user + ":" + password + "\n")
+            self.changePass(user, password)
         try:
             if password == None:
                 SetFileContents("/etc/sudoers.d/waagent", user + " ALL = (ALL) NOPASSWD: ALL\n")
@@ -1174,15 +1995,15 @@ class CoreOSDistro(AbstractDistro):
 debian_init_file = """\
 #!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          WindowsAzureLinuxAgent
+# Provides:          AzureLinuxAgent
 # Required-Start:    $network $syslog
 # Required-Stop:     $network $syslog
 # Should-Start:      $network $syslog
 # Should-Stop:       $network $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: WindowsAzureLinuxAgent
-# Description:       WindowsAzureLinuxAgent
+# Short-Description: AzureLinuxAgent
+# Description:       AzureLinuxAgent
 ### END INIT INFO
 
 . /lib/lsb/init-functions
@@ -1193,7 +2014,7 @@ WAZD_PID=/var/run/waagent.pid
 
 case "$1" in
     start)
-        log_begin_msg "Starting WindowsAzureLinuxAgent..."
+        log_begin_msg "Starting AzureLinuxAgent..."
         pid=$( pidofproc $WAZD_BIN )
         if [ -n "$pid" ] ; then
               log_begin_msg "Already running."
@@ -1205,7 +2026,7 @@ case "$1" in
         ;;
 
     stop)
-        log_begin_msg "Stopping WindowsAzureLinuxAgent..."
+        log_begin_msg "Stopping AzureLinuxAgent..."
         start-stop-daemon --stop --quiet --oknodo --pidfile $WAZD_PID
         ret=$?
         rm -f $WAZD_PID
@@ -1229,7 +2050,6 @@ esac
 
 exit 0
 """
-
 class debianDistro(AbstractDistro):
     """
     debian Distro concrete class
@@ -1256,7 +2076,7 @@ class debianDistro(AbstractDistro):
             return 1
         else:
             return 0
-        
+
     def checkDependencies(self):
         """
         Debian dependency check.  python-pyasn1 is NOT needed.
@@ -1277,7 +2097,7 @@ class debianDistro(AbstractDistro):
             return 1
         else:
             return 0
-            
+
     def installAgentServiceScriptFiles(self):
         """
         If we are packaged - the service name is walinuxagent, do nothing.
@@ -1291,20 +2111,20 @@ class debianDistro(AbstractDistro):
             ErrorWithPrefix('installAgentServiceScriptFiles','Exception: '+str(e)+' occured creating ' + self.init_script_file)
             return 1
         return 0
-    
+
     def registerAgentService(self):
         if self.installAgentServiceScriptFiles() == 0:
             return Run('update-rc.d waagent defaults')
         else :
             return 1
-    
+
     def uninstallAgentService(self):
         return Run('update-rc.d -f ' + self.agent_service_name + ' remove')
 
     def unregisterAgentService(self):
         self.stopAgentService()
         return self.uninstallAgentService()
-    
+
     def sshDeployPublicKey(self,fprint,path):
         """
         We support PKCS8.
@@ -1313,12 +2133,24 @@ class debianDistro(AbstractDistro):
             return 1
         else :
             return 0
-        
+
+############################################################    
+#	KaliDistro - WIP
+#       Functioning on Kali 1.1.0a so far
+############################################################ 
+class KaliDistro(debianDistro):
+    """
+    Kali Distro concrete class
+    Put Kali specific behavior here...
+    """
+    def __init__(self):
+        super(KaliDistro,self).__init__()
+
 ############################################################    
 #	UbuntuDistro
 ############################################################    
 ubuntu_upstart_file = """\
-#walinuxagent - start Windows Azure agent
+#walinuxagent - start Azure agent
 
 description "walinuxagent"
 author "Ben Howard <ben.howard@canonical.com>"
@@ -1344,7 +2176,6 @@ end script
 
 exec /usr/sbin/waagent -daemon
 """
-
 class UbuntuDistro(debianDistro):
     """
     Ubuntu Distro concrete class
@@ -1360,7 +2191,7 @@ class UbuntuDistro(debianDistro):
 
     def registerAgentService(self):
         return self.installAgentServiceScriptFiles()
-    
+
     def uninstallAgentService(self):
         """
         If we are packaged - the service name is walinuxagent, do nothing.
@@ -1412,6 +2243,28 @@ class UbuntuDistro(debianDistro):
         else :
             self.dhcp_client_name='dhclient'
         return self.dhcp_client_name
+    
+    def waitFor3rdPartyProvision(self):
+        """
+        Wait for cloud-init to complete provisioning by waiting cloud init file
+        to show up.
+        On Ubuntu 12.04, the file is /var/lib/cloud/instance/boot-finished
+        On Ubuntu 14.04+, the file is /run/cloud-init/result.json
+        """
+        FLAG_FILE = "/run/cloud-init/result.json"
+        if DistInfo()[1] == "12.04":
+            FLAG_FILE = "/var/lib/cloud/instance/boot-finished"
+         
+        MAX_RETRY = 60 #60 x 5 = 5 mins
+        for retry in range(0, MAX_RETRY):
+            Log("Wait for cloud init to finish provisioning.")
+            Log("Wait for cloud init file '{0}' to show up".format(FLAG_FILE))
+            time.sleep(5)
+            if(os.path.isfile(FLAG_FILE)):
+                Log("Cloud init finished provisioning.")
+                return
+        Warn("Cloud init file not found: {0}".format(FLAG_FILE))
+        Warn("Cloud init failed to finish provision in 5 minutes")
 
     def waitForSshHostKey(self, path):
         """
@@ -1423,7 +2276,6 @@ class UbuntuDistro(debianDistro):
             time.sleep(1)
         Error("Can't find host key: {0}".format(path))
         return False
-
 
 ############################################################    
 #	LinuxMintDistro
@@ -1442,7 +2294,7 @@ class LinuxMintDistro(UbuntuDistro):
 ############################################################    
 fedora_systemd_service = """\
 [Unit]
-Description=Windows Azure Linux Agent
+Description=Azure Linux Agent
 After=network.target
 After=sshd.service
 ConditionFileIsExecutable=/usr/sbin/waagent
@@ -1567,7 +2419,7 @@ class fedoraDistro(redhatDistro):
 ############################################################    
 FreeBSDWaagentConf = """\
 #
-# Windows Azure Linux Agent Configuration
+# Azure Linux Agent Configuration
 #
 
 Role.StateConsumer=None                 # Specified program is invoked with the argument "Ready" when we report ready status
@@ -1587,7 +2439,7 @@ ResourceDisk.MountPoint=/mnt/resource   #
 ResourceDisk.EnableSwap=n               # Create and use swapfile on resource disk.
 ResourceDisk.SwapSizeMB=0               # Size of the swapfile.
 
-LBProbeResponder=y                      # Respond to load balancer probes if requested by Windows Azure.
+LBProbeResponder=y                      # Respond to load balancer probes if requested by Azure.
 
 Logs.Verbose=n                          # Enable verbose logs
 
@@ -1628,8 +2480,10 @@ import imp
 __name__='setupmain' #prevent waagent.__main__ from executing
 waagent=imp.load_source('waagent','/tmp/waagent') 
 waagent.LoggerInit('/var/log/waagent.log','/dev/console')
-from waagent import RunGetOutput,Run
-Config=waagent.ConfigurationProvider()
+from waagent import RunGetOutput, Run, GetMyDistro
+myDistro = GetMyDistro()
+configFile = myDistro.getConfigurationPath()
+Config=waagent.ConfigurationProvider(configFile)
 format = Config.get("ResourceDisk.Format")
 if format == None or format.lower().startswith("n"):
     sys.exit(0)
@@ -1658,7 +2512,7 @@ sizeKB = int(Config.get("ResourceDisk.SwapSizeMB")) * 1024
 if os.path.isfile(mountpoint + "/swapfile") and os.path.getsize(mountpoint + "/swapfile") != (sizeKB * 1024):
     os.remove(mountpoint + "/swapfile")
 if not os.path.isfile(mountpoint + "/swapfile"):
-    Run("dd if=/dev/zero of=" + mountpoint + "/swapfile bs=1024 count=" + str(sizeKB))
+    Run("umask 0077 && dd if=/dev/zero of=" + mountpoint + "/swapfile bs=1024 count=" + str(sizeKB))
 if Run("mdconfig -a -t vnode -f " + mountpoint + "/swapfile -u 0"):
     waagent.Error("ActivateResourceDisk: Configuring swap - Failed to create md0")
 if not Run("swapon /dev/md0"):
@@ -1695,7 +2549,7 @@ class FreeBSDDistro(AbstractDistro):
         self.mount_dvd_cmd = 'dd bs=2048 count=33 skip=295 if=' # custom data max len is 64k 
         self.sudoers_dir_base = '/usr/local/etc'
         self.waagent_conf_file = FreeBSDWaagentConf
-        
+
     def installAgentServiceScriptFiles(self):
         SetFileContents(self.init_script_file, self.init_file)
         os.chmod(self.init_script_file, 0777)
@@ -1706,7 +2560,6 @@ class FreeBSDDistro(AbstractDistro):
         self.installAgentServiceScriptFiles()
         return Run("services_mkdb " + self.init_script_file)
 
-        
     def sshDeployPublicKey(self,fprint,path):
         """
         We support PKCS8.
@@ -1732,7 +2585,7 @@ class FreeBSDDistro(AbstractDistro):
         return 0
 
     def changePass(self,user,password):
-        return RunSendStdin("pw usermod " + user + " -h 0 ",password)
+        return RunSendStdin("pw usermod " + user + " -h 0 ",password, log_cmd=False)
     
     def load_ata_piix(self):
         return 0
@@ -1893,7 +2746,7 @@ class FreeBSDDistro(AbstractDistro):
             ChangeOwner(dir + "/authorized_keys", user)
         Log("Created user account: " + user)
         return None
-    
+
     def DeleteAccount(self,user):
         """
         Delete the 'user'.
@@ -1947,7 +2800,7 @@ class FreeBSDDistro(AbstractDistro):
         Check dependencies.
         Create /etc/waagent.conf and move old version to
         /etc/waagent.conf.old
-        Copy RulesFiles to /var/lib/waagent
+        Symlink RulesFiles to /dev/null.
         Create /etc/logrotate.d/waagent
         Set /etc/ssh/sshd_config ClientAliveInterval to 180
         Call ApplyVNUMAWorkaround()
@@ -1957,11 +2810,12 @@ class FreeBSDDistro(AbstractDistro):
         os.chmod(sys.argv[0], 0755)
         SwitchCwd()
         for a in RulesFiles:
-            if os.path.isfile(a):
-                if os.path.isfile(GetLastPathElement(a)):
-                    os.remove(GetLastPathElement(a))
-                shutil.move(a, ".")
-                Warn("Moved " + a + " -> " + LibDir + "/" + GetLastPathElement(a) )
+            try:
+                os.remove(a)
+            except:
+                pass
+            os.symlink('/dev/null', a)
+            Warn("Created symlink " + a + " -> /dev/null")
         MyDistro.registerAgentService()
         if os.path.isfile("/etc/waagent.conf"):
             try:
@@ -1983,12 +2837,12 @@ class FreeBSDDistro(AbstractDistro):
         Log("Configured SSH client probing to keep connections alive.")
         #ApplyVNUMAWorkaround()
         return 0
-    
+
     def mediaHasFilesystem(self,dsk):
         if Run('LC_ALL=C fdisk -p ' + dsk + ' | grep "invalid fdisk partition table found" ',False):
             return False
         return True
-    
+
     def mountDVD(self,dvd,location):
         #At this point we cannot read a joliet option udf DVD in freebsd10 - so we 'dd' it into our location
         retcode,out = RunGetOutput(self.mount_dvd_cmd + dvd + ' of=' + location + '/ovf-env.xml')
@@ -2024,10 +2878,16 @@ class FreeBSDDistro(AbstractDistro):
 
     def getProcessorCores(self):
         return int(RunGetOutput("sysctl hw.ncpu | awk '{print $2}'")[1])
-    
+
     def getTotalMemory(self):
         return int(RunGetOutput("sysctl hw.realmem | awk '{print $2}'")[1])/1024
-        
+
+    def setDefaultGateway(self, gateway):
+        Run("/sbin/route add default " + gateway, chk_err=False)
+
+    def routeAdd(self, net, mask, gateway):
+        Run("/sbin/route add -net " + net + " " + mask + " " + gateway, chk_err=False)
+
 ############################################################
 # END DISTRO CLASS DEFS
 ############################################################  
@@ -2081,7 +2941,7 @@ def SetFileContents(filepath, contents):
     try:
         with open(filepath, "wb+") as F :
             F.write(contents)
-    except IOError, e:
+    except (IOError,TypeError) as e:
         ErrorWithPrefix('SetFileContents','Writing to file ' + filepath + ' Exception is ' + str(e))
         return None
     return 0
@@ -2095,7 +2955,7 @@ def AppendFileContents(filepath, contents):
     try: 
         with open(filepath, "a+") as F :
             F.write(contents)
-    except IOError, e:
+    except (IOError,TypeError) as e:
         ErrorWithPrefix('AppendFileContents','Appending to file ' + filepath + ' Exception is ' + str(e))
         return None
     return 0
@@ -2109,7 +2969,7 @@ def ReplaceFileContentsAtomic(filepath, contents):
         contents=contents.encode('latin-1')
     try:
         os.write(handle, contents)
-    except IOError, e:
+    except (IOError,TypeError) as e:
         ErrorWithPrefix('ReplaceFileContentsAtomic','Writing to file ' + filepath + ' Exception is ' + str(e))
         return None
     finally:
@@ -2148,41 +3008,43 @@ def Run(cmd,chk_err=True):
     retcode,out=RunGetOutput(cmd,chk_err)
     return retcode
 
-def RunGetOutput(cmd,chk_err=True):
+def RunGetOutput(cmd, chk_err=True, log_cmd=True):
     """
     Wrapper for subprocess.check_output.
     Execute 'cmd'.  Returns return code and STDOUT, trapping expected exceptions.
     Reports exceptions to Error if chk_err parameter is True
     """
-    LogIfVerbose(cmd)
-    try:                                     
+    if log_cmd:
+        LogIfVerbose(cmd)
+    try:
         output=subprocess.check_output(cmd,stderr=subprocess.STDOUT,shell=True)
     except subprocess.CalledProcessError,e :
-        if chk_err :
+        if chk_err and log_cmd:
             Error('CalledProcessError.  Error Code is ' + str(e.returncode)  )
             Error('CalledProcessError.  Command string was ' + e.cmd  )
             Error('CalledProcessError.  Command result was ' + (e.output[:-1]).decode('latin-1'))
         return e.returncode,e.output.decode('latin-1')
     return 0,output.decode('latin-1')
 
-def RunSendStdin(cmd,input,chk_err=True):
+def RunSendStdin(cmd, input, chk_err=True, log_cmd=True):
     """
     Wrapper for subprocess.Popen.
     Execute 'cmd', sending 'input' to STDIN of 'cmd'.
     Returns return code and STDOUT, trapping expected exceptions.
     Reports exceptions to Error if chk_err parameter is True
     """
-    LogIfVerbose(cmd+input)
+    if log_cmd:
+        LogIfVerbose(cmd+input)
     try:                                     
         me=subprocess.Popen([cmd], shell=True, stdin=subprocess.PIPE,stderr=subprocess.STDOUT,stdout=subprocess.PIPE)
         output=me.communicate(input)
     except OSError , e :
-        if chk_err :
+        if chk_err and log_cmd:
             Error('CalledProcessError.  Error Code is ' + str(me.returncode)  )
             Error('CalledProcessError.  Command string was ' + cmd  )
             Error('CalledProcessError.  Command result was ' + output[0].decode('latin-1'))
             return 1,output[0].decode('latin-1')
-    if me.returncode is not 0 and chk_err is True:
+    if me.returncode is not 0 and chk_err is True and log_cmd:
             Error('CalledProcessError.  Error Code is ' + str(me.returncode)  )
             Error('CalledProcessError.  Command string was ' + cmd  )
             Error('CalledProcessError.  Command result was ' + output[0].decode('latin-1'))
@@ -2264,7 +3126,7 @@ def CreateAccount(user, password, expiration, thumbprint):
     else:
         Log("CreateAccount: " + user + " already exists. Will update password.")
     if password != None:
-        RunSendStdin("chpasswd",(user + ":" + password + "\n"))
+        MyDistro.changePass(user, password)
     try:
         # for older distros create sudoers.d
         if not os.path.isdir('/etc/sudoers.d/'):
@@ -2404,13 +3266,13 @@ class Logger(object):
         self.file_path=filepath
         self.con_path=conpath
         self.verbose=verbose
-        
+
     def ThrottleLog(self,counter):
         """
         Log everything up to 10, every 10 up to 100, then every 100.
         """
         return (counter < 10) or ((counter < 100) and ((counter % 10) == 0)) or ((counter % 100) == 0)
-    
+
     def LogToFile(self,message):
         """
         Write 'message' to logfile.
@@ -2423,7 +3285,7 @@ class Logger(object):
             except IOError, e:
                 print e
                 pass
-            
+
     def LogToCon(self,message):
         """
         Write 'message' to /dev/console.
@@ -2436,16 +3298,15 @@ class Logger(object):
                     message = filter(lambda x : x in string.printable, message)
                     C.write(message.encode('ascii','ignore') + "\n")
             except IOError, e:
-                print e
                 pass
-                
+
     def Log(self,message):
         """
         Standard Log function.
         Logs to self.file_path, and con_path
         """
         self.LogWithPrefix("", message)
-    
+
     def LogWithPrefix(self,prefix, message):
         """
         Prefix each line of 'message' with current time+'prefix'.
@@ -2457,19 +3318,19 @@ class Logger(object):
             line = t + line
             self.LogToFile(line)
             self.LogToCon(line)
-            
+
     def NoLog(self,message):
         """
         Don't Log.
         """
         pass
-    
+
     def LogIfVerbose(self,message):
         """
         Only log 'message' if global Verbose is True.
         """
         self.LogWithPrefixIfVerbose('',message)
-    
+
     def LogWithPrefixIfVerbose(self,prefix, message):
         """
         Only log 'message' if global Verbose is True.
@@ -2483,26 +3344,26 @@ class Logger(object):
                 line = t + line
                 self.LogToFile(line)
                 self.LogToCon(line)
-                
+
     def Warn(self,message):
         """
         Prepend the text "WARNING:" to the prefix for each line in 'message'.
         """
         self.LogWithPrefix("WARNING:", message)
-    
+
     def Error(self,message):
         """
         Call ErrorWithPrefix(message).
         """
         ErrorWithPrefix("", message)
-    
+
     def ErrorWithPrefix(self,prefix, message):
         """
         Prepend the text "ERROR:" to the prefix for each line in 'message'.
         Errors written to logfile, and /dev/console
         """
         self.LogWithPrefix("ERROR:", message)
-    
+
 def LoggerInit(log_file_path,log_con_path,verbose=False):
     """
     Create log object and export its methods to global scope.
@@ -2526,18 +3387,22 @@ def GetFirstActiveNetworkInterfaceNonLoopback():
     """
     iface=''
     expected=16 # how many devices should I expect...
-    struct_size=40 # for 64bit the size is 40 bytes
+    is_64bits = sys.maxsize > 2**32
+    struct_size=40 if is_64bits else 32 # for 64bit the size is 40 bytes, for 32bits it is 32 bytes.
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     buff=array.array('B', b'\0' * (expected*struct_size))
     retsize=(struct.unpack('iL', fcntl.ioctl(s.fileno(), 0x8912, struct.pack('iL',expected*struct_size,buff.buffer_info()[0]))))[0]
     if retsize == (expected*struct_size) :
         Warn('SIOCGIFCONF returned more than ' + str(expected) + ' up network interfaces.')
     s=buff.tostring()
+    preferred_nic = Config.get("Network.Interface")
     for i in range(0,struct_size*expected,struct_size):
         iface=s[i:i+16].split(b'\0', 1)[0]
         if iface == b'lo':
             continue
-        else :
+        elif preferred_nic is None:
+            break
+        elif iface == preferred_nic:
             break
     return iface.decode('latin-1'), socket.inet_ntoa(s[i+20:i+24])
 
@@ -2598,6 +3463,53 @@ def DeviceForIdePort(n):
 
 class HttpResourceGoneError(Exception):
     pass
+
+def DoInstallRHUIRPM():
+    """
+    Install RHUI RPM according to VM region
+    """
+    rhuiRPMinstalled = os.path.exists(LibDir + "/rhuirpminstalled")
+    if rhuiRPMinstalled:
+        return
+    else:
+        SetFileContents(LibDir + "/rhuirpminstalled", "")
+
+    Log("Begin to install RHUI RPM")
+    cmd = "grep '<Location>' /var/lib/waagent/ExtensionsConfig* --no-filename | sed 's/<Location>//g' | sed 's/<\/Location>//g' | sed 's/ //g' | tr 'A-Z' 'a-z' | uniq"
+
+    retcode,out = RunGetOutput(cmd, True)
+    region = out.rstrip("\n")
+
+    #try a few times at most to get the region info
+    retry = 0
+    for i in range(0, 8):
+        if (region != ""):
+            break
+        Log("region info is empty, now wait 15 seconds...")
+        time.sleep(15)
+        retcode,out = RunGetOutput(cmd, True)
+        region = out.rstrip("\n")
+
+    if region == "":
+        Log("could not detect region info, now use the default region: eastus2")
+        region = "eastus2"
+
+    scriptFilePath = "/tmp/install-rhui-rpm.sh"
+
+    if not os.path.exists(scriptFilePath):
+        Error(scriptFilePath + " does not exist, now quit RHUI RPM installation.");
+        return
+    #chmod a+x script file
+    os.chmod(scriptFilePath, 0100)
+    Log("begin to run " + scriptFilePath)
+
+    #execute the downloaded script file
+    retcode,out = RunGetOutput(scriptFilePath, True)
+    if retcode != 0:
+        Error("execute script " + scriptFilePath + " failed, return code: " + str(retcode) + ", now exit RHUI RPM installation.");
+        return
+
+    Log("install RHUI RPM completed")
 
 class Util(object):
     """
@@ -2661,20 +3573,20 @@ class Util(object):
             if secure:
                 port = 443 if port is None else port
                 if proxyHost is not None and proxyPort is not None:
-                    conn = httplib.HTTPSConnection(proxyHost, proxyPort)
+                    conn = httplib.HTTPSConnection(proxyHost, proxyPort, timeout=10)
                     conn.set_tunnel(host, port)
                     #If proxy is used, full url is needed.
                     path = "https://{0}:{1}{2}".format(host, port, path)
                 else:
-                    conn = httplib.HTTPSConnection(host, port)
+                    conn = httplib.HTTPSConnection(host, port, timeout=10)
             else:
                 port = 80 if port is None else port
                 if proxyHost is not None and proxyPort is not None:
-                    conn = httplib.HTTPConnection(proxyHost, proxyPort)
+                    conn = httplib.HTTPConnection(proxyHost, proxyPort, timeout=10)
                     #If proxy is used, full url is needed.
                     path = "http://{0}:{1}{2}".format(host, port, path)
                 else:
-                    conn = httplib.HTTPConnection(host, port)
+                    conn = httplib.HTTPConnection(host, port, timeout=10)
             if headers == None:
                 conn.request(method, path, data)
             else:
@@ -2722,8 +3634,9 @@ class Util(object):
             secure = False
             proxyHost, proxyPort = self.GetHttpProxy(secure)
 
-        resp = self._HttpRequest(method, host, path, port, data, 
-                                 secure, headers, proxyHost, proxyPort)
+        resp = self._HttpRequest(method, host, path, port=port, data=data, 
+                                 secure=secure, headers=headers,
+                                 proxyHost=proxyHost, proxyPort=proxyPort)
         for retry in range(0, maxRetry):
             if resp is not None and \
                    (resp.status == httplib.OK or \
@@ -2747,31 +3660,38 @@ class Util(object):
                 Error("HTTP Err: Body={0}".format(resp.read()))
 
             time.sleep(self.__class__.RetryWaitingInterval)
-            resp = self._HttpRequest(method, host, path, data, secure, 
-                                     headers, proxyHost, proxyPort)
+            resp = self._HttpRequest(method, host, path, port=port, data=data, 
+                                     secure=secure, headers=headers,
+                                     proxyHost=proxyHost, proxyPort=proxyPort)
 
         return None
 
     def HttpGet(self, url, headers=None, maxRetry=3, chkProxy=False):
-        return self.HttpRequest("GET", url, None, headers, maxRetry, chkProxy)
+        return self.HttpRequest("GET", url, headers=headers, 
+                                maxRetry=maxRetry, chkProxy=chkProxy)
         
     def HttpHead(self, url, headers=None, maxRetry=3, chkProxy=False):
-        return self.HttpRequest("HEAD", url, None, headers, maxRetry, chkProxy)
+        return self.HttpRequest("HEAD", url, headers=headers, 
+                                maxRetry=maxRetry, chkProxy=chkProxy)
         
     def HttpPost(self, url, data, headers=None, maxRetry=3, chkProxy=False):
-        return self.HttpRequest("POST", url, data, headers, maxRetry, chkProxy)
+        return self.HttpRequest("POST", url, data=data, headers=headers, 
+                                maxRetry=maxRetry, chkProxy=chkProxy)
 
     def HttpPut(self, url, data, headers=None, maxRetry=3, chkProxy=False):
-        return self.HttpRequest("PUT", url, data, headers, maxRetry, chkProxy)
+        return self.HttpRequest("PUT", url, data=data, headers=headers, 
+                                maxRetry=maxRetry, chkProxy=chkProxy)
 
     def HttpDelete(self, url, headers=None, maxRetry=3, chkProxy=False):
-        return self.HttpRequest("DELETE", url, None, headers, maxRetry, chkProxy)
+        return self.HttpRequest("DELETE", url, headers=headers, 
+                                maxRetry=maxRetry, chkProxy=chkProxy)
     
     def HttpGetWithoutHeaders(self, url, maxRetry=3, chkProxy=False):
         """
         Return data from an HTTP get on 'url'.
         """
-        resp = self.HttpGet(url, None, maxRetry, chkProxy)
+        resp = self.HttpGet(url, headers=None, maxRetry=maxRetry, 
+                            chkProxy=chkProxy)
         return resp.read() if resp is not None else None
 
     def HttpGetWithHeaders(self, url, maxRetry=3, chkProxy=False):
@@ -2780,10 +3700,10 @@ class Util(object):
         x-ms-agent-name and x-ms-version
         headers.
         """
-        resp = self.HttpGet(url, {
+        resp = self.HttpGet(url, headers={
             "x-ms-agent-name": GuestAgentName, 
             "x-ms-version": ProtocolVersion
-        }, maxRetry, chkProxy)
+        }, maxRetry=maxRetry, chkProxy=chkProxy)
         return resp.read() if resp is not None else None
 
     def HttpSecureGetWithHeaders(self, url, transportCert, maxRetry=3, 
@@ -2791,21 +3711,26 @@ class Util(object):
         """
         Return output of get using ssl cert.
         """
-        resp = self.HttpGet(url, {
+        resp = self.HttpGet(url, headers={
             "x-ms-agent-name": GuestAgentName,
             "x-ms-version": ProtocolVersion,
             "x-ms-cipher-name": "DES_EDE3_CBC",
             "x-ms-guest-agent-public-x509-cert": transportCert
-        }, maxRetry, chkProxy)
+        }, maxRetry=maxRetry, chkProxy=chkProxy)
         return resp.read() if resp is not None else None
 
     def HttpPostWithHeaders(self, url, data, maxRetry=3, chkProxy=False):
-        header = {
+        headers = {
             "x-ms-agent-name": GuestAgentName,
             "Content-Type": "text/xml; charset=utf-8",
             "x-ms-version": ProtocolVersion
         }
-        return self.HttpPost(url, data, header, maxRetry, chkProxy)
+        try:
+            return self.HttpPost(url, data=data, headers=headers, 
+                                 maxRetry=maxRetry, chkProxy=chkProxy)
+        except HttpResourceGoneError as e:
+            Error("Failed to post: {0} {1}".format(url, e))
+            return None
 
 __StorageVersion="2014-02-14"
 
@@ -2838,6 +3763,8 @@ def PutBlockBlob(url, data):
     }, chkProxy=True)
     if ret is None:
         Error("Failed to upload block blob for status.")
+        return -1
+    return 0
 
 def PutPageBlob(url, data):
     restutil = Util()
@@ -2854,7 +3781,7 @@ def PutPageBlob(url, data):
     }, chkProxy=True)
     if ret is None:
         Error("Failed to clean up page blob for status")
-        return
+        return -1
         
     if url.index('?') < 0:
         url = "{0}?comp=page".format(url)
@@ -2873,7 +3800,7 @@ def PutPageBlob(url, data):
         bufSize = pageEnd - start
         buf = bytearray(bufSize)
         buf[0 : contentSize] = data[start : end]
-        ret = restutil.HttpPut(url, buf, {
+        ret = restutil.HttpPut(url, buffer(buf), {
             "x-ms-date" :  timestamp,
             "x-ms-range" : "bytes={0}-{1}".format(start, pageEnd - 1),
             "x-ms-page-write" : "update",
@@ -2882,8 +3809,9 @@ def PutPageBlob(url, data):
         }, chkProxy=True)
         if ret is None:
             Error("Failed to upload page blob for status")
-            return
+            return -1
         start = end
+    return 0
 
 def UploadStatusBlob(url, data):
     LogIfVerbose("Upload status blob")
@@ -2891,12 +3819,12 @@ def UploadStatusBlob(url, data):
     blobType = GetBlobType(url) 
 
     if blobType == "BlockBlob":
-        PutBlockBlob(url, data)    
+        return PutBlockBlob(url, data)    
     elif blobType == "PageBlob":
-        PutPageBlob(url, data)    
+        return PutPageBlob(url, data)    
     else:
         Error("Unknown blob type: {0}".format(blobType))
-        return None
+        return -1
 
 class TCPHandler(SocketServer.BaseRequestHandler):
     """
@@ -2926,7 +3854,7 @@ class TCPHandler(SocketServer.BaseRequestHandler):
         log("Received LB probe # " + strCounter)
         self.request.recv(1024)
         self.request.send("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: text/html\r\nDate: " + self.GetHttpDateTimeNow() + "\r\n\r\nOK")
-            
+
 class LoadBalancerProbeServer(object):
     """
     Threaded object to receive and send LB probe messages.
@@ -2956,12 +3884,10 @@ class ConfigurationProvider(object):
     """
     Parse amd store key:values in waagent.conf
     """
-    def __init__(self):
+    def __init__(self, walaConfigFile):
         self.values = dict()
-        if 'MyDistro' not in globals():
-            global MyDistro
-            MyDistro = GetMyDistro()
-        walaConfigFile = MyDistro.getConfigurationPath()
+        if walaConfigFile is None:
+            walaConfigFile = MyDistro.getConfigurationPath()
         if os.path.isfile(walaConfigFile) == False:
             raise Exception("Missing configuration in {0}".format(walaConfigFile))
         try:
@@ -2980,6 +3906,20 @@ class ConfigurationProvider(object):
 
     def get(self, key):
         return self.values.get(key)
+
+    def yes(self,key):
+        configValue = self.get(key)
+        if(configValue is not None and configValue.lower().startswith("y")):
+            return True
+        else:
+            return False
+
+    def no(self,key):
+        configValue = self.get(key)
+        if(configValue is not None and configValue.lower().startswith("n")):
+            return True
+        else:
+            return False
 
 class EnvMonitor(object):
     """
@@ -3000,16 +3940,22 @@ class EnvMonitor(object):
         If dhcp clinet process re-start has occurred, reset routes, dhcp with fabric.
         """
         publish = Config.get("Provisioning.MonitorHostName")
+        udevrules = Config.get("OS.PersistentNetNames")
         dhcpcmd = MyDistro.getpidcmd+ ' ' + MyDistro.getDhcpClientName()
         dhcppid = RunGetOutput(dhcpcmd)[1]
         while not self.shutdown:
-            for a in RulesFiles:
-                if os.path.isfile(a):
-                    if os.path.isfile(GetLastPathElement(a)):
-                        os.remove(GetLastPathElement(a))
-                    shutil.move(a, ".")
-                    Log("EnvMonitor: Moved " + a + " -> " + LibDir)
+            if udevrules == None or udevrules.lower().startswith("n"):
+                for a in RulesFiles:
+                    if os.path.isfile(a):
+                        if os.path.isfile(GetLastPathElement(a)):
+                            os.remove(GetLastPathElement(a))
+                        shutil.move(a, ".")
+                    if not os.path.islink(a):
+                        os.symlink('/dev/null', a)
+                        Log("EnvMonitor: Created symlink " + a + " -> /dev/null")
+
             MyDistro.setScsiDiskTimeout()
+
             if publish != None and publish.lower().startswith("y"):
                 try:
                     if socket.gethostname() != self.HostName:
@@ -3239,35 +4185,6 @@ class SharedConfig(object):
         LogIfVerbose("Save SharedConfig.xml")
         SetFileContents("SharedConfig.xml", self.xmlText)
 
-    def ConfigRdma(self, dev="/dev/hvnd_rdma", datConf="/etc/dat.conf"):
-        if self.RdmaIPv4Address is None or self.RdmaMacAddress is  None:
-            return
-
-        if os.path.isfile(datConf):
-            old = ("ofa-v2-ib0 u2.0 nonthreadsafe default libdaplofa.so.2 "
-                   "dapl.2.0 \"\S+ 0\"")
-            new = ("ofa-v2-ib0 u2.0 nonthreadsafe default libdaplofa.so.2 "
-                   "dapl.2.0 \"{0} 0\"").format(self.RdmaIPv4Address)
-            lines = GetFileContents(datConf)
-            lines = re.sub(old, new, lines)
-            SetFileContents(lines)
-
-        if os.path.isfile(dev):
-            data = ('rdmaMacAddress="{0}" rdmaIPv4Address="{1}"'
-                    '').format(self.RdmaMacAddress, self.RdmaIPv4Address)
-            Log("Write rdma config to {0}: {1}".format(dev, data))
-            try:
-                with open(dev, "w") as c:
-                    c.write(data)
-            except IOError, e:
-                Error("Error writing {0}, {1}".format(dev, e))
-            
-            try:
-                ifName = MyDistro.getInterfaceNameByMac(self.RdmaMacAddress)
-                MyDistro.configIpV4(ifName, self.RdmaIPv4Address)
-            except Exception as e:
-                Error("Failed to config rdma device: {0}".format(e))
-
     def InvokeTopologyConsumer(self):
         program = Config.get("Role.TopologyConsumer")
         if program != None:
@@ -3277,12 +4194,137 @@ class SharedConfig(object):
                 ErrorWithPrefix('Agent.Run','Exception: '+ str(e) +' occured launching ' + program )
 
     def Process(self):
-        self.ConfigRdma()
+        global rdma_configured
+        if not rdma_configured and self.RdmaMacAddress is not None and self.RdmaIPv4Address is not None:
+            handler = RdmaHandler(self.RdmaMacAddress, self.RdmaIPv4Address)
+            handler.start()
+            rdma_configured = True
         self.InvokeTopologyConsumer()
+
+rdma_configured = False
+
+class RdmaConfig(object):
+    """
+    error code definitions
+    """
+    process_success = 0
+    common_failed = 1
+    check_install_hv_utils_failed = 2
+    nd_driver_detect_error = 3
+    driver_version_not_found = 4
+    unknown_error = 5
+    package_not_found = 6
+    package_install_failed = 7
+    hv_kvp_daemon_not_started = 8
+    os_not_supported = 9
+    package_info_pattern_error = 10
+    """
+    check_rdma_result
+    """
+    UpToDate = 0
+    OutOfDate = 1
+    DriverVersionNotFound = 3
+    Unknown = -1
+    """
+    installed package status
+    """
+    Installed = 0
+    NotInstalled = 1
+
+class RdmaError(Exception):
+    def __init__(self, error_code = RdmaConfig.process_success):
+        self.error_code = error_code
+
+class RdmaHandler(object):
+    """
+    Handle rdma configuration.
+    """
+
+    def __init__(self, mac, ip_addr, dev="/dev/hvnd_rdma",
+                 dat_conf_files=['/etc/dat.conf', '/etc/rdma/dat.conf',
+                                 '/usr/local/etc/dat.conf']):
+        self.mac = mac
+        self.ip_addr = ip_addr
+        self.dev = dev
+        self.dat_conf_files = dat_conf_files
+        self.data = ('rdmaMacAddress="{0}" rdmaIPv4Address="{1}"'
+                     '').format(self.mac, self.ip_addr)
+
+    def start(self):
+        """
+        Start a new thread to process rdma
+        """
+        threading.Thread(target=self.process).start()
+
+    def process(self):
+        try:
+            self.set_dat_conf()
+            self.set_rdma_dev()
+            self.set_rdma_ip()
+        except RdmaError as e:
+            Error("Failed to config rdma device: {0}".format(e))
+
+    def set_dat_conf(self):
+        """
+        Agent needs to search all possible locations for dat.conf
+        """
+        Log("Set dat.conf")
+        for dat_conf_file in self.dat_conf_files:
+            if not os.path.isfile(dat_conf_file):
+                continue
+            try:
+                self.write_dat_conf(dat_conf_file)
+            except IOError as e:
+                raise RdmaError("Failed to write to dat.conf: {0}".format(e))
+
+    def write_dat_conf(self, dat_conf_file):
+        Log("Write config to {0}".format(dat_conf_file))
+        old = ("ofa-v2-ib0 u2.0 nonthreadsafe default libdaplofa.so.2 "
+               "dapl.2.0 \"\S+ 0\"")
+        new = ("ofa-v2-ib0 u2.0 nonthreadsafe default libdaplofa.so.2 "
+               "dapl.2.0 \"{0} 0\"").format(self.ip_addr)
+        lines = GetFileContents(dat_conf_file)
+        lines = re.sub(old, new, lines)
+        SetFileContents(dat_conf_file, lines)
+
+    def set_rdma_dev(self):
+        """
+        Write config string to /dev/hvnd_rdma
+        """
+        Log("Set /dev/hvnd_rdma")
+        self.wait_rdma_dev()
+        self.write_rdma_dev_conf()
+
+    def write_rdma_dev_conf(self):
+        Log("Write rdma config to {0}: {1}".format(self.dev, self.data))
+        try:
+            with open(self.dev, "w") as c:
+                c.write(self.data)
+        except (IOError,TypeError) as e:
+            raise RdmaError("Error writing {0}, {1}".format(self.dev, e))
+
+    def wait_rdma_dev(self):
+        Log("Wait for /dev/hvnd_rdma")
+        retry = 0
+        while retry < 120:
+            if os.path.exists(self.dev):
+                return
+            time.sleep(1)
+            retry += 1
+        raise RdmaError("The device doesn't show up in 120 seconds")
+
+    def set_rdma_ip(self):
+        Log("Set ip addr for rdma")
+        try:
+            if_name = MyDistro.getInterfaceNameByMac(self.mac)
+            #Azure is using 12 bits network mask for infiniband.
+            MyDistro.configIpV4(if_name, self.ip_addr, 12)
+        except Exception as e:
+            raise RdmaError("Failed to config rdma device: {0}".format(e))
 
 class ExtensionsConfig(object):
     """
-    Parse ExtensionsConfig, downloading and unpacking them to /var/lib/waagent.
+    Parse ExtensionsConfig, downloading and unpacking them to LibDir.
     Install if <enabled>true</enabled>, remove if it is set to false.
     """
     #<?xml version="1.0" encoding="utf-8"?>
@@ -3384,11 +4426,11 @@ class ExtensionsConfig(object):
                     if mfile != None:
                         break
                 if mfile == None :
-                    Error('HandlerManifest.json not found.')
+                    #The plugin is already uninstalled.
                     continue
                 manifest = GetFileContents(mfile)
                 p.setAttribute('manifestdata',manifest)
-                if self.launchCommand(p.plugin_log,name,version,'disableCommand') == None :
+                if self.launchCommand(p.plugin_log,name,version,'disableCommand') != 0 :
                     self.SetHandlerState(handler, 'Enabled')
                     Error('Unable to disable '+name)
                     SimpleLog(p.plugin_log,'ERROR: Unable to disable '+name)
@@ -3399,7 +4441,7 @@ class ExtensionsConfig(object):
 
                 # uninstall if needed
                 if p.getAttribute("state") == 'uninstall':
-                    if self.launchCommand(p.plugin_log,name,version,'uninstallCommand') == None :
+                    if self.launchCommand(p.plugin_log,name,version,'uninstallCommand') != 0 :
                         self.SetHandlerState(handler, 'Installed')
                         Error('Unable to uninstall '+name)
                         SimpleLog(p.plugin_log,'Unable to uninstall '+name)
@@ -3416,15 +4458,29 @@ class ExtensionsConfig(object):
             # if the same plugin exists and the version is newer or
             # does not exist then download and unzip the new plugin
             plg_dir=None
-            for root, dirs, files in os.walk(LibDir):
-                for d in dirs:
-                    if name in d:
-                        plg_dir=os.path.join(root,d)
-                    if plg_dir != None:
-                        break
-            if plg_dir != None :
-                previous_version=plg_dir.rsplit('-')[-1]
-            if plg_dir == None or version > previous_version :
+
+            latest_version_installed = LooseVersion("0.0")
+            for item in os.listdir(LibDir):
+                itemPath = os.path.join(LibDir, item)
+                if os.path.isdir(itemPath) and name in item:
+                    try:
+                        #Split plugin dir name with '-' to get intalled plugin name and version
+                        sperator = item.rfind('-')
+                        if sperator < 0:
+                            continue
+                        installed_plg_name = item[0:sperator]
+                        installed_plg_version = LooseVersion(item[sperator + 1:])
+
+                        #Check installed plugin name and compare installed version to get the latest version installed
+                        if installed_plg_name == name and installed_plg_version > latest_version_installed:
+                            plg_dir = itemPath
+                            previous_version = str(installed_plg_version)
+                            latest_version_installed = installed_plg_version
+                    except Exception as e:
+                        Warn("Invalid plugin dir name: {0} {1}".format(item, e))
+                        continue
+
+            if plg_dir == None or LooseVersion(version) > LooseVersion(previous_version) :
                 location=p.getAttribute("location")
                 Log("Downloading plugin manifest: " + name + " from " + location)
                 SimpleLog(p.plugin_log,"Downloading plugin manifest: " + name + " from " + location)
@@ -3478,7 +4534,7 @@ class ExtensionsConfig(object):
                 # Download the zipfile archive and save as '.zip'
                 bundle=self.Util.HttpGetWithoutHeaders(bundle_uri, chkProxy=True)
                 if bundle == None:
-                    AddExtensionEvent(name,WALAEventOperation.Download,True,0,version,"Download zip fail "+bundle_uri)
+                    AddExtensionEvent(name,WALAEventOperation.Download,False,0,version,"Download zip fail "+bundle_uri)
                     Error("Unable to download plugin bundle" + bundle_uri )
                     SimpleLog(p.plugin_log,"Unable to download plugin bundle" + bundle_uri )
                     continue
@@ -3540,12 +4596,12 @@ class ExtensionsConfig(object):
 
                 cmd = ''
                 getcmd='installCommand'
-                if plg_dir != None and previous_version != None and version > previous_version :
+                if plg_dir != None and previous_version != None and LooseVersion(version) > LooseVersion(previous_version):
                     previous_handler=name+'-'+previous_version
                     if self.GetHandlerState(previous_handler) != 'NotInstalled':
                         getcmd='updateCommand'
                         # disable the old plugin if it exists
-                        if self.launchCommand(p.plugin_log,name,previous_version,'disableCommand') == None :
+                        if self.launchCommand(p.plugin_log,name,previous_version,'disableCommand') != 0 :
                             self.SetHandlerState(previous_handler, 'Enabled')
                             Error('Unable to disable old plugin '+name+' version ' + previous_version)
                             SimpleLog(p.plugin_log,'Unable to disable old plugin '+name+' version ' + previous_version)
@@ -3553,10 +4609,27 @@ class ExtensionsConfig(object):
                             self.SetHandlerState(previous_handler, 'Disabled')
                             Log(name+' version ' + previous_version + ' is disabled')
                             SimpleLog(p.plugin_log,name+' version ' + previous_version + ' is disabled')
+                    
+                        try:
+                            Log("Copy status file from old plugin dir to new")
+                            old_plg_dir = plg_dir 
+                            new_plg_dir = os.path.join(LibDir, "{0}-{1}".format(name, version))
+                            old_ext_status_dir = os.path.join(old_plg_dir, "status")
+                            new_ext_status_dir = os.path.join(new_plg_dir, "status")
+                            if os.path.isdir(old_ext_status_dir):
+                                for status_file in os.listdir(old_ext_status_dir):
+                                    status_file_path = os.path.join(old_ext_status_dir, status_file)
+                                    if os.path.isfile(status_file_path):
+                                        shutil.copy2(status_file_path, new_ext_status_dir)
+                            mrseq_file = os.path.join(old_plg_dir, "mrseq")
+                            if os.path.isfile(mrseq_file):
+                                shutil.copy(mrseq_file, new_plg_dir)
+                        except Exception as e:
+                            Error("Failed to copy status file.")
 
                 isupgradeSuccess = True
                 if getcmd=='updateCommand':
-                    if self.launchCommand(p.plugin_log,name,version,getcmd,previous_version) == None :
+                    if self.launchCommand(p.plugin_log,name,version,getcmd,previous_version) != 0 :
                         Error('Update failed for '+name+'-'+version)
                         SimpleLog(p.plugin_log,'Update failed for '+name+'-'+version)
                         isupgradeSuccess=False
@@ -3565,7 +4638,7 @@ class ExtensionsConfig(object):
                         SimpleLog(p.plugin_log,'Update complete'+name+'-'+version)
 
                     # if we updated - call unistall for the old plugin
-                    if self.launchCommand(p.plugin_log,name,previous_version,'uninstallCommand') == None :
+                    if self.launchCommand(p.plugin_log,name,previous_version,'uninstallCommand') != 0 :
                         self.SetHandlerState(previous_handler, 'Installed')
                         Error('Uninstall failed for '+name+'-'+previous_version)
                         SimpleLog(p.plugin_log,'Uninstall failed for '+name+'-'+previous_version)
@@ -3574,9 +4647,20 @@ class ExtensionsConfig(object):
                         self.SetHandlerState(previous_handler, 'NotInstalled')
                         Log('Uninstall complete'+ previous_handler )
                         SimpleLog(p.plugin_log,'Uninstall complete'+ name +'-' + previous_version)
-                    AddExtensionEvent(name,WALAEventOperation.Upgrade,isupgradeSuccess,0,previous_version)
+                    
+                    try:
+                        #rm old plugin dir
+                        if os.path.isdir(plg_dir):
+                            shutil.rmtree(plg_dir)
+                            Log(name +'-'+ previous_version + ' extension files deleted.')
+                            SimpleLog(p.plugin_log,name +'-'+ previous_version + ' extension files deleted.')
+                    except Exception as e:
+                        Error("Failed to remove old plugin directory")
+                    
+                    message = "Upgrade succeeded" if isupgradeSuccess else "Upgrade failed"
+                    AddExtensionEvent(name,WALAEventOperation.Upgrade,isupgradeSuccess,0,previous_version, message=message)
                 else :  # run install
-                    if self.launchCommand(p.plugin_log,name,version,getcmd) == None :
+                    if self.launchCommand(p.plugin_log,name,version,getcmd) != 0:
                         self.SetHandlerState(handler, 'NotInstalled')
                         Error('Installation failed for '+name+'-'+version)
                         SimpleLog(p.plugin_log,'Installation failed for '+name+'-'+version)
@@ -3628,7 +4712,7 @@ class ExtensionsConfig(object):
 
             # state is still enable
             if (self.GetHandlerState(handler) == 'NotInstalled'):  # run install first if true
-                if self.launchCommand(p.plugin_log,name,version,'installCommand') == None :
+                if self.launchCommand(p.plugin_log,name,version,'installCommand') != 0:
                     self.SetHandlerState(handler, 'NotInstalled')
                     Error('Installation failed for '+name+'-'+version)
                     SimpleLog(p.plugin_log,'Installation failed for '+name+'-'+version)
@@ -3640,7 +4724,7 @@ class ExtensionsConfig(object):
 
 
             if (self.GetHandlerState(handler) != 'NotInstalled'):
-                if self.launchCommand(p.plugin_log,name,version,'enableCommand') == None :
+                if self.launchCommand(p.plugin_log,name,version,'enableCommand') != 0:
                     self.SetHandlerState(handler, 'Installed')
                     Error('Enable failed for '+name+'-'+version)
                     SimpleLog(p.plugin_log,'Enable failed for '+name+'-'+version)
@@ -3670,15 +4754,23 @@ class ExtensionsConfig(object):
         "enableCommand": WALAEventOperation.Enable,
         "disableCommand": WALAEventOperation.Disable,
         }
-        isSuccess=True
+
         start = datetime.datetime.now()
-        r=self.__launchCommandWithoutEventLog(plugin_log,name,version,command,prev_version)
-        if r==None:
-            isSuccess=False
-        Duration = int((datetime.datetime.now() - start).seconds)
-        if commandToEventOperation.get(command):
-            AddExtensionEvent(name,commandToEventOperation[command],isSuccess,Duration,version)
-        return r
+
+        ret = self.__launchCommandWithoutEventLog(plugin_log, name, version, command, prev_version)
+
+        duration = int((datetime.datetime.now() - start).seconds)
+
+        operation = commandToEventOperation.get(command)
+        if operation:
+            if ret[0] != 0:
+                message = "Failed to launch command : {0}, {1}".format(command, ret[1])
+                AddExtensionEvent(name, operation, False, duration=duration, version=version, message=message)
+            else:
+                message = "Launch command succeeded: {0}".format(command)
+                AddExtensionEvent(name, operation, True, duration=duration, version=version, message=message)
+
+        return ret[0]
 
     def __launchCommandWithoutEventLog(self,plugin_log,name,version,command,prev_version=None):
         # get the manifest and read the command
@@ -3691,31 +4783,33 @@ class ExtensionsConfig(object):
             if mfile != None:
                 break
         if mfile == None :
-            Error('HandlerManifest.json not found.')
-            SimpleLog(plugin_log,'HandlerManifest.json not found.')
-            
-            return None
+            message = 'HandlerManifest.json not found.'
+            Error(message)
+            SimpleLog(plugin_log, message)
+            return -1, message
+
         manifest = GetFileContents(mfile)
         try:
             jsn = json.loads(manifest)
         except:
-            Error('Error parsing HandlerManifest.json.')
-            SimpleLog(plugin_log,'Error parsing HandlerManifest.json.')
+            message = 'Error parsing HandlerManifest.json.'
+            Error(message)
+            SimpleLog(plugin_log, message)
+            return -1, message
 
-            return None
         if type(jsn)==list:
             jsn=jsn[0]
         if jsn.has_key('handlerManifest') :
             cmd = jsn['handlerManifest'][command]
-        else :
+        else:
             Error('Key handlerManifest not found.  Handler cannot be installed.')
             SimpleLog(plugin_log,'Key handlerManifest not found.  Handler cannot be installed.')
 
         if len(cmd) == 0 :
-            Error('Unable to read ' + command )
-            SimpleLog(plugin_log,'Unable to read ' + command )
-
-            return None
+            message = "Unable to read {0}".format(command)
+            Error(message)
+            SimpleLog(plugin_log, message)
+            return -1, message
 
         # for update we send the path of the old installation
         arg=''
@@ -3751,21 +4845,25 @@ class ExtensionsConfig(object):
             time.sleep(5)
             retry-=1
         if retry==0:
-            Error('Process exceeded timeout of ' + str(timeout) + ' seconds. Terminating process ' + str(pid))
-            SimpleLog(plugin_log,'Process exceeded timeout of ' + str(timeout) + ' seconds. Terminating process ' + str(pid))
+            message = "Process exceeded timeout of {0} seconds. Terminating process {1}".format(timeout, pid)
+            Error(message)
+            SimpleLog(plugin_log, message)
 
             os.kill(pid,9)
-            return None
+
+            return -1, message
+
         code = child.wait()
         if code == None or code != 0:
-            Error('Process ' + str(pid) + ' returned non-zero exit code (' + str(code) + ')')
-            SimpleLog(plugin_log,'Process ' + str(pid) + ' returned non-zero exit code (' + str(code) + ')')
+            message = "Process {0} returned non-zero exit code({1})".format(pid, code)
+            Error(message)
+            SimpleLog(plugin_log, message)
+            return -1, message
 
-            return None
         Log(command + ' completed.')
         SimpleLog(plugin_log,command + ' completed.')
 
-        return 0
+        return 0, ""
 
     def ReportHandlerStatus(self):
         """
@@ -3789,7 +4887,7 @@ class ExtensionsConfig(object):
             incarnation=self.Extensions[0].getAttribute("goalStateIncarnation")
         except:
             Error('Error parsing ExtensionsConfig.  Unable to send status reports')
-            return None
+            return -1
         status=''
         statuses=''
         for p in self.Plugins:
@@ -3827,11 +4925,10 @@ class ExtensionsConfig(object):
             uri=GetNodeTextData(self.Extensions[0].getElementsByTagName("StatusUploadBlob")[0]).replace('&amp;','&')
         except:
             Error('Error parsing ExtensionsConfig.  Unable to send status reports')
-            return None
+            return -1
 
-        UploadStatusBlob(uri, status.encode("utf-8"))
         LogIfVerbose('Status report '+status+' sent to ' + uri)
-        return True
+        return UploadStatusBlob(uri, status.encode("utf-8"))
 
     def GetCurrentSequenceNumber(self, plugin_base_dir):
         """
@@ -3848,7 +4945,6 @@ class ExtensionsConfig(object):
                 except ValueError:
                     continue
         return str(seq_no)
-
 
     def GenerateAggStatus(self, name, version, reportHeartbeat = False):
         """
@@ -3908,7 +5004,6 @@ class ExtensionsConfig(object):
         agg_status_string = json.dumps(agg_status_obj)
         LogIfVerbose("Handler Aggregated Status:" + agg_status_string)
         return agg_status_string
-    
 
     def SetHandlerState(self, handler, state=''):
         zip_dir=LibDir+"/" + handler
@@ -3931,7 +5026,6 @@ class ExtensionsConfig(object):
             return handlerState.rstrip('\r\n')
         else:
             return 'NotInstalled'
-
 
 class HostingEnvironmentConfig(object):
     """
@@ -4219,7 +5313,7 @@ class GoalState(Util):
         LogIfVerbose("Process goalstate")
         self.HostingEnvironmentConfig.Process()
         self.SharedConfig.Process()
-        
+
 class OvfEnv(object):
     """
     Read, and process provisioning info from provisioning file OvfEnv.xml
@@ -4317,7 +5411,7 @@ class OvfEnv(object):
             if len(CDSection) > 0 :
                 self.CustomData=GetNodeTextData(CDSection[0])
                 if len(self.CustomData)>0:
-                    SetFileContents(LibDir + '/CustomData', MyDistro.translateCustomData(self.CustomData))
+                    SetFileContents(LibDir + '/CustomData', bytearray(MyDistro.translateCustomData(self.CustomData)))
                     Log('Wrote ' + LibDir + '/CustomData')
                 else :
                     Error('<CustomData> contains no data!')
@@ -4435,10 +5529,11 @@ class OvfEnv(object):
         if self.DisableSshPasswordAuthentication:
             filepath = "/etc/ssh/sshd_config"
             # Disable RFC 4252 and RFC 4256 authentication schemes.
-            ReplaceFileContentsAtomic(filepath, "\n".join(filter(lambda a: not
-                (a.startswith("PasswordAuthentication") or a.startswith("ChallengeResponseAuthentication")),
-                GetFileContents(filepath).split('\n'))) + "\nPasswordAuthentication no\nChallengeResponseAuthentication no\n")
-            Log("Disabled SSH password-based authentication methods.")
+            if os.path.exists(filepath):
+                ReplaceFileContentsAtomic(filepath, "\n".join(filter(lambda a: not
+                    (a.startswith("PasswordAuthentication") or a.startswith("ChallengeResponseAuthentication")),
+                    GetFileContents(filepath).split('\n'))) + "\nPasswordAuthentication no\nChallengeResponseAuthentication no\n")
+                Log("Disabled SSH password-based authentication methods.")
         if self.AdminPassword != None:
             MyDistro.changePass('root',self.AdminPassword)
         if self.UserName != None:
@@ -4490,13 +5585,10 @@ class OvfEnv(object):
         MyDistro.restartSshService()
         return error
 
-
-class WALAEvent(object):   
+class WALAEvent(object):
     def __init__(self):
-            
         self.providerId=""
         self.eventId=1
-        
         self.OpcodeName=""
         self.KeywordName=""
         self.TaskName=""
@@ -4525,7 +5617,7 @@ class WALAEvent(object):
         for attName in  self.__dict__:
             if attName in ["eventId","filedCount","providerId"]:
                 continue
-            
+
             attValue = self.__dict__[attName]
             if type(attValue) is int:
                 strEventsData+=strRecordFormat.format(attName,attValue,strMtUInt64)
@@ -4544,7 +5636,7 @@ class WALAEvent(object):
             if type(attValue) is float:
                 strEventsData+=strRecordFormat.format(attName,attValue,strMtFloat)
                 continue
-            
+
             Log("Warning: property "+attName+":"+str(type(attValue))+":type"+str(type(attValue))+"Can't convert to events data:"+":type not supported")
 
         return u"<Data>{0}{1}{2}</Data>".format(strProviderid,strEventid,strEventsData)
@@ -4556,12 +5648,11 @@ class WALAEvent(object):
             os.chmod(eventfolder,0700)
         if len(os.listdir(eventfolder)) > 1000:
             raise Exception("WriteToFolder:Too many file under "+eventfolder+" exit")
-    
+
         filename = os.path.join(eventfolder,str(int(time.time()*1000000)))
         with open(filename+".tmp",'wb+') as hfile:
             hfile.write(self.ToXml().encode("utf-8"))
         os.rename(filename+".tmp",filename+".tld")
-
 
 class WALAEventOperation:
     HeartBeat="HeartBeat"
@@ -4572,7 +5663,7 @@ class WALAEventOperation:
     Enable = "Enable"
     Download = "Download"
     Upgrade = "Upgrade"
-    Update = "Update"           
+    Update = "Update"
 
 def AddExtensionEvent(name,op,isSuccess,duration=0,version="1.0",message="",type="",isInternal=False):
     event = ExtensionEvent()
@@ -4588,8 +5679,7 @@ def AddExtensionEvent(name,op,isSuccess,duration=0,version="1.0",message="",type
         event.Save()
     except:
         Error("Error "+traceback.format_exc())
-        
-    
+
 class ExtensionEvent(WALAEvent):
     def __init__(self):
                 
@@ -4604,8 +5694,7 @@ class ExtensionEvent(WALAEvent):
         self.ExtensionType=""
         self.Message=""
         self.Duration=0
-    
-               		           
+
 class WALAEventMonitor(WALAEvent):
     def __init__(self,postMethod):
         WALAEvent.__init__(self)
@@ -4618,20 +5707,23 @@ class WALAEventMonitor(WALAEvent):
         eventThread = threading.Thread(target = self.EventsLoop)
         eventThread.setDaemon(True)
         eventThread.start()
-        
+
     def EventsLoop(self):
         LastReportHeartBeatTime = datetime.datetime.min
         try:
             while(True):
                 if (datetime.datetime.now()-LastReportHeartBeatTime) > datetime.timedelta(hours=12):
                     LastReportHeartBeatTime = datetime.datetime.now()
-                    AddExtensionEvent(op=WALAEventOperation.HeartBeat,name="WALA",isSuccess=True)
+                    openPorts = self.GetOpenPorts()
+                    extensions = self.GetExtensions()
+                    message = 'openPorts={0};extensions={1}'.format(openPorts, extensions)
+                    AddExtensionEvent(op=WALAEventOperation.HeartBeat, message=message, name="WALA", isSuccess=True)
                 self.postNumbersInOneLoop=0
                 self.CollectAndSendWALAEvents()
                 time.sleep(60)
         except:
             Error("Exception in events loop:"+traceback.format_exc())
-			     		    		
+
     def SendEvent(self,providerid,events):
         dataFormat = u'<?xml version="1.0"?><TelemetryData version="1.0"><Provider id="{0}">{1}'\
         '</Provider></TelemetryData>'
@@ -4693,7 +5785,6 @@ class WALAEventMonitor(WALAEvent):
                 self.SendEvent(key,events[key])
                 if eventSendNumber%3 == 0:
                     time.sleep(15)
-                
 
     def AddSystemInfo(self,eventData):
         if not self.issysteminfoinitilized:
@@ -4703,9 +5794,9 @@ class WALAEventMonitor(WALAEvent):
                 self.sysInfo["GAVersion"]=GuestAgentVersion
                 self.sysInfo["RAM"]=MyDistro.getTotalMemory()
                 self.sysInfo["Processors"]=MyDistro.getProcessorCores()
-                sharedConfig = xml.dom.minidom.parse("/var/lib/waagent/SharedConfig.xml").childNodes[0]
-                hostEnvConfig= xml.dom.minidom.parse("/var/lib/waagent/HostingEnvironmentConfig.xml").childNodes[0]
-                gfiles = RunGetOutput("ls -t /var/lib/waagent/GoalState.*.xml")[1]
+                sharedConfig = xml.dom.minidom.parse(LibDir + "/SharedConfig.xml").childNodes[0]
+                hostEnvConfig= xml.dom.minidom.parse(LibDir + "/HostingEnvironmentConfig.xml").childNodes[0]
+                gfiles = RunGetOutput("ls -t " + LibDir + "/GoalState.*.xml")[1]
                 goalStateConfi =  xml.dom.minidom.parse(gfiles.split("\n")[0]).childNodes[0]
                 self.sysInfo["TenantName"]=hostEnvConfig.getElementsByTagName("Deployment")[0].getAttribute("name")
                 self.sysInfo["RoleName"]=hostEnvConfig.getElementsByTagName("Role")[0].getAttribute("name")
@@ -4721,8 +5812,64 @@ class WALAEventMonitor(WALAEvent):
                 if self.sysInfo.get(name):
                     node.setAttribute("Value",xml.sax.saxutils.escape(str(self.sysInfo[name])))
 
-        return  eventObject.toxml()            
+        return  eventObject.toxml()
 
+    def GetOpenPorts(self):
+        """
+        Find the open/listening ports on this computer
+        Return a string containeing all ports info like program1:protocol1:port1,program2:protocol2:port2,...
+        """
+        openPorts = set()
+        ret, output = RunGetOutput("netstat -tulnp")
+
+        for line in output.split('\n'):
+            protocol = port = program = None
+            try:
+                #parse the output on each line, which contains the info of protocol/port/progam
+                #format for tcp/udp connection:
+                #Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+                #tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      1096/sshd
+                #udp        0      0 0.0.0.0:68              0.0.0.0:*                           670/dhclient
+                if line.startswith("tcp"):
+                    props = [i for i in line.split()]
+                    protocol = props[0]
+                    port = props[3].split(":")[-1]
+                    program = props[6].split("/")[-1]
+                elif line.startswith("udp"):
+                    props = [i for i in line.split()]
+                    protocol = props[0]
+                    port = props[3].split(":")[-1]
+                    program = props[5].split("/")[-1]
+                if program and program not in ["dhclient", "sshd"]:
+                    app = "{0}:{1}:{2}".format(program, protocol, port)
+                    openPorts.add(app)
+            except:
+                LogIfVerbose("FAIL to parse port for line:{0}".format(line))
+
+        return ",".join(openPorts)
+
+    def GetExtensions(self):
+        """
+        Find the extentions that are installed on this computer
+        Return a string containeing all extension info like extension_name1:version1:state1,extension_name2:version2:state2,...
+        """
+        extensions = set()
+        ret, gfiles = RunGetOutput("ls -t /var/lib/waagent/ExtensionsConfig.*.xml")
+
+        try:
+            gfile = gfiles.split("\n")[0]
+            goalStateConfi =  xml.dom.minidom.parse(gfile)
+            plugins = goalStateConfi.getElementsByTagName("Plugins")[0].getElementsByTagName("Plugin")
+            for plugin in plugins:
+                name = plugin.getAttribute("name")
+                version = plugin.getAttribute("version")
+                state = plugin.getAttribute("state")
+                extension = "{0}:{1}:{2}".format(name, version, state)
+                extensions.add(extension)
+        except:
+            LogIfVerbose("FAIL to get extensions from {0}".format(gfile))
+
+        return ",".join(extensions)
 
 class Agent(Util):
     """
@@ -4886,7 +6033,16 @@ class Agent(Util):
         net = self.IntegerToIpAddressV4String(net)
         mask = self.IntegerToIpAddressV4String(mask)
         gateway = self.IntegerToIpAddressV4String(gateway)
-        Run("/sbin/route add -net " + net + " netmask " + mask + " gw " + gateway,chk_err=False)
+        Log("Route add: net={0}, mask={1}, gateway={2}".format(net, mask, gateway))
+        MyDistro.routeAdd(net, mask, gateway)
+    
+    def SetDefaultGateway(self, gateway):
+        """
+        Set default gateway
+        """
+        gateway = self.IntegerToIpAddressV4String(gateway)
+        Log("Set default gateway: {0}".format(gateway))
+        MyDistro.setDefaultGateway(gateway)
 
     def HandleDhcpResponse(self, sendData, receiveBuffer):
         """
@@ -4969,11 +6125,11 @@ class Agent(Util):
                     gateway = self.UnpackBigEndian(receiveBuffer, i + 2, 4)
                     IpAddress = self.IntegerToIpAddressV4String(gateway)
                     if option == 3:
-                        self.RouteAdd(0, 0, gateway)
+                        self.SetDefaultGateway(gateway)
                         name = "DefaultGateway"
                     else:
                         endpoint = IpAddress
-                        name = "Windows Azure wire protocol endpoint"
+                        name = "Azure wire protocol endpoint"
                     LogIfVerbose(name + ": " + IpAddress + " at " + hex(i))
                 else:
                     Error("HandleDhcpResponse: Data too small for option " + str(option))
@@ -4985,7 +6141,7 @@ class Agent(Util):
     def DoDhcpWork(self):
         """
         Discover the wire server via DHCP option 245.
-        And workaround incompatibility with Windows Azure DHCP servers.
+        And workaround incompatibility with Azure DHCP servers.
         """
         ShortSleep = False # Sleep 1 second before retrying DHCP queries.
         ifname=None
@@ -5099,7 +6255,7 @@ class Agent(Util):
         if not goalStateXml:
             Error("UpdateGoalState failed.")
             return
-        Log("Retrieved GoalState from Windows Azure Fabric.")
+        Log("Retrieved GoalState from Azure Fabric.")
         self.GoalState = GoalState(self).Parse(goalStateXml)
         return self.GoalState
 
@@ -5184,7 +6340,7 @@ class Agent(Util):
         pid = subprocess.Popen(["/bin/bash","/mnt/cdrom/secure/"+VMM_STARTUP_SCRIPT_NAME,"-p /mnt/cdrom/secure/ "]).pid
         time.sleep(5)
         sys.exit(0)
-        
+
     def TryUnloadAtapiix(self):
         """
         If global modloaded is True, then we loaded the ata_piix kernel module, unload it.
@@ -5230,7 +6386,7 @@ class Agent(Util):
             return 1
         
         Log("Loaded " + krn_pth + " driver for ATAPI CD-ROM")
-        
+
         # we have succeeded loading the ata_piix mod if it can be done.
 
     def SearchForVMMStartup(self):
@@ -5280,7 +6436,7 @@ class Agent(Util):
 
         Log("VMM Init script not found.  Provisioning for Azure")
         return 
-        
+
     def Provision(self):
         """
         Responible for:
@@ -5293,7 +6449,10 @@ class Agent(Util):
         """
         enabled = Config.get("Provisioning.Enabled")
         if enabled != None and enabled.lower().startswith("n"):
+            #If provision is disabled for waagent, wait for 3rd party component, like cloud init to finish provision.
+            MyDistro.waitFor3rdPartyProvision()
             return
+
         Log("Provisioning image started.")
         type = Config.get("Provisioning.SshHostKeyPairType")
         if type == None:
@@ -5390,6 +6549,8 @@ class Agent(Util):
         """
         SetFileContents("/var/run/waagent.pid", str(os.getpid()) + "\n")
 
+        reportHandlerStatusCount = 0
+
         # Determine if we are in VMM.  Spawn VMM_STARTUP_SCRIPT_NAME if found.
         self.SearchForVMMStartup()
         ipv4=''
@@ -5411,15 +6572,15 @@ class Agent(Util):
         except:
             pass
 
-        Log("Probing for Windows Azure environment.")
+        Log("Probing for Azure environment.")
         self.Endpoint = self.DoDhcpWork()
 
-        if self.Endpoint == None:
-            Log("Windows Azure environment not detected.")
-            while True:
-                time.sleep(60)
+        while self.Endpoint == None:
+            Log("Retry environment detection in 60 seconds")
+            time.sleep(60)
+            self.Endpoint = self.DoDhcpWork()
 
-        Log("Discovered Windows Azure endpoint: " + self.Endpoint)
+        Log("Discovered Azure endpoint: " + self.Endpoint)
         if not self.CheckVersions():
             Error("Agent.CheckVersions failed")
             sys.exit(1)
@@ -5430,25 +6591,86 @@ class Agent(Util):
         MyDistro.initScsiDiskTimeout()
         global provisioned
         global provisionError
-        
+
         global Openssl
         Openssl = Config.get("OS.OpensslPath")
         if Openssl == None:
             Openssl = "openssl"
 
         self.TransportCert = self.GenerateTransportCert()
-        
+
         eventMonitor = None
         incarnation = None # goalStateIncarnationFromHealthReport
         currentPort = None # loadBalancerProbePort
         goalState = None # self.GoalState, instance of GoalState
         provisioned = os.path.exists(LibDir + "/provisioned")
         program = Config.get("Role.StateConsumer")
-        provisionError = None        
+        provisionError = None 
         lbProbeResponder = True
-        setting = Config.get("LBProbeResponder")
-        if setting != None and setting.lower().startswith("n"):
+
+        lbProbeResponderNo = Config.no("LBProbeResponder")
+        if lbProbeResponderNo:
             lbProbeResponder = False
+
+        try:
+            updateRdmaDriverConfigured = Config.yes("OS.UpdateRdmaDriver")
+            updateRdmaRepository = Config.get("OS.RdmaRepository")
+            rdmaExtraConfigFile = Config.get("OS.PackageExtraConfig")
+            preTaskFile = None
+            postTaskFile = None
+            extraRepositories = None
+            extraPackages = None
+            if(rdmaExtraConfigFile is not None and os.path.exists(rdmaExtraConfigFile)):
+                extraConfigContent = GetFileContents(rdmaExtraConfigFile)
+                extraConfigJson = json.loads(extraConfigContent)
+                preTaskFile = extraConfigJson['PreTask']
+                postTaskFile = extraConfigJson['PostTask']
+                extraRepositories = extraConfigJson['ExtraRepositories']
+                extraPackages = extraConfigJson['Packages']
+
+            if(updateRdmaRepository is not None):
+                rdmaRepository = {"Url":updateRdmaRepository,"Name":"msft-rdma-pack"}
+                MyDistro.addPackageRepository(rdmaRepository)
+
+            if(preTaskFile is not None):
+                #execute the pre task file
+                error,output = RunGetOutput(preTaskFile,chk_err = False)
+                Log("pre task execution result is %s, output is: %s" % (error,output))
+
+            if(updateRdmaDriverConfigured):
+                try:
+                    MyDistro.rdmaUpdate()
+                except RdmaError as e:
+                    Log("rdmaupdate failed ") 
+            else:
+                Log("OS.UpdateRdmaDriver configured to " + str(updateRdmaDriverConfigured) + " so skip the rdma update.")
+
+            if(extraRepositories is not None):
+                Log("extraRepositories %s" % extraRepositories)
+                for repository in extraRepositories:
+                    Log("add repository %s" % (repository["Name"]))
+                    MyDistro.addPackageRepository(repository)
+
+            if(extraPackages is not None):
+                MyDistro.refreshRepository()
+                for package in extraPackages:
+                    MyDistro.installPackage(package, extraConfigJson["ForceReinstall"])
+
+            if(postTaskFile is not None):
+                #execute the pre task file
+                error,output = RunGetOutput(postTaskFile,chk_err = False)
+                Log("post task execution result is %s, output is: %s" % (error,output))
+
+            checkRdmaDriverConfigured = Config.yes("OS.CheckRdmaDriver")
+            if(checkRdmaDriverConfigured):
+                checkRdmaResult = MyDistro.checkRDMA()
+                Log("Rdma check result is " + str(checkRdmaResult))
+            else:
+                Log("OS.CheckRdmaDriver configured to " + str(checkRdmaDriverConfigured) + " so skip the rdma check.")
+        except Exception as e:
+            errMsg = 'check or update Rdma driver failed with error: %s, stack trace: %s' % (str(e), traceback.format_exc())
+            Error(errMsg)
+
         while True:
             if (goalState == None) or (incarnation == None) or (goalState.Incarnation != incarnation):
                 try:
@@ -5534,19 +6756,28 @@ class Agent(Util):
                 incarnation = self.ReportReady()
             # Process our extensions.
             if goalState.ExtensionsConfig == None and goalState.ExtensionsConfigXml != None :
+                reportHandlerStatusCount = 0 #Reset count when new goal state comes
                 goalState.ExtensionsConfig = ExtensionsConfig().Parse(goalState.ExtensionsConfigXml)
 
             # report the status/heartbeat results of extension processing
             if goalState.ExtensionsConfig != None :
-                goalState.ExtensionsConfig.ReportHandlerStatus()
-            
+                ret = goalState.ExtensionsConfig.ReportHandlerStatus()
+                if ret != 0:
+                    Error("Failed to report handler status")
+                elif reportHandlerStatusCount % 1000 == 0:
+                    #Agent report handler status every 25 seconds. Reduce the log entries by adding a count
+                    Log("Successfully reported handler status")
+                reportHandlerStatusCount += 1
+            global LinuxDistro
+            if LinuxDistro == "redhat":
+                DoInstallRHUIRPM()
+
             if not eventMonitor:
                 eventMonitor = WALAEventMonitor(self.HttpPostWithHeaders)
                 eventMonitor.StartEventsLoop()
 
             time.sleep(25 - sleepToReduceAccessDenied)
 
-            
 WaagentLogrotate = """\
 /var/log/waagent.log {
     monthly
@@ -5666,7 +6897,7 @@ def ApplyVNUMAWorkaround():
         Log("Your kernel version " + platform.release() + " has a NUMA-related bug: NUMA has been disabled.")
     else :
         "Error adding 'numa=off'.  NUMA has not been disabled."
-        
+
 def RevertVNUMAWorkaround():
     """
     Remove 'numa=off' from kernel boot options.
@@ -5682,7 +6913,7 @@ def Install():
     Check dependencies.
     Create /etc/waagent.conf and move old version to
     /etc/waagent.conf.old
-    Copy RulesFiles to /var/lib/waagent
+    Symlink RulesFiles to /dev/null
     Create /etc/logrotate.d/waagent
     Set /etc/ssh/sshd_config ClientAliveInterval to 180
     Call ApplyVNUMAWorkaround()
@@ -5692,11 +6923,12 @@ def Install():
     os.chmod(sys.argv[0], 0755)
     SwitchCwd()
     for a in RulesFiles:
-        if os.path.isfile(a):
-            if os.path.isfile(GetLastPathElement(a)):
-                os.remove(GetLastPathElement(a))
-            shutil.move(a, ".")
-            Warn("Moved " + a + " -> " + LibDir + "/" + GetLastPathElement(a) )
+        try:
+            os.remove(a)
+        except:
+            pass
+        os.symlink('/dev/null', a)
+        Warn("Created symlink " + a + " -> /dev/null")
     MyDistro.registerAgentService()
     if os.path.isfile("/etc/waagent.conf"):
         try:
@@ -5732,6 +6964,11 @@ def GetMyDistro(dist_class_name=''):
         Distro=Distro.strip('"')
         Distro=Distro.strip(' ')
         dist_class_name=Distro+'Distro'
+        # Workaround: python platform library cannot detect NixOS
+        if not Distro and os.path.exists('/etc/os-release'):
+            f = GetFileContents('/etc/os-release')
+            if 'NixOS' in f:
+                dist_class_name = 'NixOSDistro' 
     else:
         Distro=dist_class_name
     if not globals().has_key(dist_class_name):
@@ -5744,10 +6981,14 @@ def DistInfo(fullname=0):
         release = re.sub('\-.*\Z', '', str(platform.release()))
         distinfo = ['FreeBSD', release]
         return distinfo
-    
+
     if 'linux_distribution' in dir(platform):
         distinfo = list(platform.linux_distribution(full_distribution_name=fullname))
         distinfo[0] = distinfo[0].strip() # remove trailing whitespace in distro name
+        # Workaround: python platform library cannot detect NixOS
+        if not distinfo[0] and os.path.exists('/etc/os-release'):
+            if 'NixOS' in GetFileContents('/etc/os-release'):
+                return [ 'NixOS', '', '' ]
         return distinfo
     else:
         return platform.dist()
@@ -5771,16 +7012,15 @@ def LibraryInstall(buildroot):
 def Uninstall():
     """
     Uninstall the agent service.
-    Copy RulesFiles back to original locations.
+    Remove RulesFiles symlinks.
     Delete agent-related files.
     Call RevertVNUMAWorkaround().
     """
     SwitchCwd()
     for a in RulesFiles:
-        if os.path.isfile(GetLastPathElement(a)):
+        if os.path.islink(a):
             try:
-                shutil.move(GetLastPathElement(a), a)
-                Warn("Moved " + LibDir + "/" + GetLastPathElement(a) + " -> " + a )
+                os.remove(a)
             except:
                 pass
     MyDistro.unregisterAgentService()
@@ -5795,7 +7035,7 @@ def Deprovision(force, deluser):
     Stop agent service.
     Remove SSH host keys if they were generated by the provision.
     Set hostname to 'localhost.localdomain'.
-    Delete cached system configuration files in /var/lib and /var/lib/waagent.
+    Delete cached system configuration files in /var/lib and LibDir.
     """
     
     #Append blank line at the end of file, so the ctime of this file is changed every time
@@ -5832,8 +7072,20 @@ def Deprovision(force, deluser):
     if delRootPass != None and delRootPass.lower().startswith("y"):
         MyDistro.deleteRootPassword()
     # Remove distribution specific networking configuration
-
     MyDistro.publishHostname('localhost.localdomain')
+    udevrules = Config.get("OS.PersistentNetNames")
+    if udevrules == None or udevrules.lower().startswith("n"):
+        for a in RulesFiles:
+            try:
+                os.remove(a)
+            except:
+                pass
+            os.symlink('/dev/null', a)
+    else:
+        try:
+            os.remove('/etc/udev/rules.d/70-persistent-net.rules')
+        except:
+            pass
     MyDistro.deprovisionDeleteFiles()
     if deluser == True:
         MyDistro.DeleteAccount(ovfobj.UserName)
@@ -5841,7 +7093,7 @@ def Deprovision(force, deluser):
 
 def SwitchCwd():
     """
-    Switch to cwd to /var/lib/waagent.
+    Switch to cwd to LibDir.
     Create if not present.
     """
     CreateDir(LibDir, "root", 0700)
@@ -5853,8 +7105,6 @@ def Usage():
     """
     print("usage: " + sys.argv[0] + " [-verbose] [-force] [-help|-install|-uninstall|-deprovision[+user]|-version|-serialconsole|-daemon]")
     return 0
-
-
 
 def main():
     """
@@ -5873,17 +7123,12 @@ def main():
     LoggerInit('/var/log/waagent.log','/dev/console')
     global LinuxDistro
     LinuxDistro=DistInfo()[0]
-    
-    #The platform.py lib has issue with detecting oracle linux distribution.
-    #Merge the following patch provided by oracle as a temparory fix.
-    if os.path.exists("/etc/oracle-release"): 
-        LinuxDistro="Oracle Linux" 
-
     global MyDistro
-    MyDistro=GetMyDistro()
+    MyDistro = GetMyDistro()
     if MyDistro == None :
         sys.exit(1)
     args = []
+    conf_file = None
     global force
     force = False
     for a in sys.argv[1:]:
@@ -5896,6 +7141,8 @@ def main():
             myLogger.verbose = True
         elif re.match("^([-/]*)force", a):
             force = True
+        elif re.match("^(?:[-/]*)conf=.+", a):
+            conf_file = re.match("^(?:[-/]*)conf=(.+)", a).groups()[0]
         elif re.match("^([-/]*)(setup|install)", a):
             sys.exit(MyDistro.Install())
         elif re.match("^([-/]*)(uninstall)", a):
@@ -5903,8 +7150,14 @@ def main():
         else:
             args.append(a)
     global Config
-    Config = ConfigurationProvider()
+    Config = ConfigurationProvider(conf_file)
     
+    logfile = Config.get("Logs.File")
+    if logfile is not None:
+        myLogger.file_path = logfile
+    logconsole = Config.get("Logs.Console")
+    if logconsole is not None and logconsole.lower().startswith("n"):
+        myLogger.con_path = None
     verbose = Config.get("Logs.Verbose")
     if verbose != None and verbose.lower().startswith("y"):
         myLogger.verbose=True
@@ -5929,18 +7182,20 @@ def main():
         sys.exit(Usage())
     global modloaded
     modloaded = False
-    try:
-        SwitchCwd()
-        Log(GuestAgentLongName + " Version: " + GuestAgentVersion)
-        if IsLinux():
-            Log("Linux Distribution Detected      : " + LinuxDistro)
-        global WaAgent
-        WaAgent = Agent()
-        WaAgent.Run()
-    except Exception, e:
-        Error(traceback.format_exc())
-        Error("Exception: " + str(e))
-        sys.exit(1)
-    
+
+    while True:
+        try:
+            SwitchCwd()
+            Log(GuestAgentLongName + " Version: " + GuestAgentVersion)
+            if IsLinux():
+                Log("Linux Distribution Detected      : " + LinuxDistro)
+            global WaAgent
+            WaAgent = Agent()
+            WaAgent.Run()
+        except Exception, e:
+            Error(traceback.format_exc())
+            Error("Exception: " + str(e))
+            Log("Restart agent in 15 seconds")
+            time.sleep(15)
 if __name__ == '__main__' :
     main()

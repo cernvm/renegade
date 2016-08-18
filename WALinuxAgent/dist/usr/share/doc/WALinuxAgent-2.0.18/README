@@ -95,6 +95,11 @@ installed by running:
 
 The agent's log file is kept at /var/log/waagent.log.
 
+Note: Provision Guest Agent must be enabled for Linux VM in Azure. But if you are running Linux VM created from your VHD file or unchecked the VM agent option during creating Linux VM in Azure portal, the value of provision guest agent on the VM may not be set to "True". You need run below PowerShell command to set the ProvisionGuestAgent to "True":
+
+Powershell command:
+    $vm = Get-AzureVM -ServiceName 'MyServiceName' -Name 'MyVMName'
+    $vm.GetInstance().ProvisionGuestAgent = $true
 
 UPGRADE
 
@@ -117,7 +122,11 @@ For CoreOS, use:
 
     #sudo systemctl restart waagent 
 
-The agent's log file is kept at /var/log/waagent.log.
+Check the agent version, you will see it is updated to new version:
+    #waagent -version
+or(on Ubuntu)
+    #walinuxagent -version
+
 
 
 COMMAND LINE OPTIONS
@@ -127,6 +136,10 @@ Flags:
   -verbose: Increase verbosity of specified command
 
   -force: Skip interactive confirmation for some commands
+
+Options:
+
+  -conf=/path/to/file.conf: Specify configuration file to use instead of default one.
 
 Commands:
 
@@ -197,12 +210,16 @@ Provisioning.SshHostKeyPairType=rsa
 Provisioning.MonitorHostName=y
 Provisioning.DecodeCustomData=n
 Provisioning.ExecuteCustomData=n
+Provisioning.PasswordCryptId=6
+Provisioning.PasswordCryptSaltLength=10
 ResourceDisk.Format=y
 ResourceDisk.Filesystem=ext4
 ResourceDisk.MountPoint=/mnt/resource
 ResourceDisk.EnableSwap=n
 ResourceDisk.SwapSizeMB=0
 LBProbeResponder=y
+Logs.File=/var/log/waagent.log
+Logs.Console=y
 Logs.Verbose=n
 OS.RootDeviceScsiTimeout=300
 OS.OpensslPath=None
@@ -298,6 +315,20 @@ Type: Boolean Default: n
 
 If set, waagent will execute CustomData after provisioning.
 
+Provisioning.PasswordCryptId:
+Type:String Default:6
+
+Algorithm used by crypt when generating password hash.
+    1 - MD5
+    2a - Blowfish
+    5 - SHA-256
+    6 - SHA-512
+
+Provisioning.PasswordCryptSaltLength
+Type:String Default:10
+
+Length of random salt used when generating password hash.
+
 ResourceDisk.Format:
 Type: Boolean Default: y
 
@@ -337,11 +368,23 @@ Type: Boolean Default: y
 If set, waagent will respond to load balancer probes from the platform (if
 present).
 
+Logs.File:
+Type: String Default: /dev/stdout
+
+If set, logs are appended to this file (instead of stdout). Bundled
+config (config/waagent.conf) sets this to '/var/log/waagent.log'.
+
+Logs.Console:
+Type: Boolean Default: n
+
+If set, waagent also logs to serial console. Bundled config (config/waagent.conf)
+sets this to 'y'.
+
 Logs.Verbose:
 Type: Boolean Default: n
 
-If set, log verbosity is boosted. Waagent logs to /var/log/waagent.log and
-leverages the system logrotate functionality to rotate logs.
+If set, log verbosity is boosted. When waagent logs to file it can
+leverage the system logrotate functionality to rotate logs.
 
 OS.RootDeviceScsiTimeout:
 Type: Integer Default: 300
