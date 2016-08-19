@@ -1,3 +1,8 @@
-/usr/*
-/etc/*
-/var/*
+/usr/bin/pubkey2ssh
+/usr/lib/systemd/system/walinuxagent.service
+/usr/lib/udevd/rules.d/99-azure-product-uuid.rules
+/usr/sbin/waagent
+/usr/share/doc/WALinuxAgent-2.0.18
+/etc/logrotate.d/WALinuxAgent
+/etc/waagent.conf
+/var/lib/waagent
