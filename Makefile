@@ -17,6 +17,7 @@ PACKAGES = \
 	cernvm-release \
 	cernvm-theme \
 	cernvm-update \
+	cernvm-waagent \
 	compat-xrootd-libs \
 	compat-xrootd-client-libs \
 	docker-cernvm \
@@ -36,8 +37,7 @@ PACKAGES = \
 	vaf-client \
 	vboxguest \
 	VBoxManage \
-	vmware-tools-plugins-unity \
-	WALinuxAgent
+	vmware-tools-plugins-unity
 
 PACKAGES-32BIT = $(wildcard *-i686)
 
