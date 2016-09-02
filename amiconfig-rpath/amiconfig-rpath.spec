@@ -23,7 +23,7 @@ make
 make DESTDIR=%{buildroot} install
 rm -rf %{buildroot}/etc/init.d
 mkdir -p %{buildroot}/usr/lib/python2.6/site-packages
-ln -s /usr/lib/python/site-packages/amiconfig %{buildroot}/usr/lib/python2.6/site-packages/amiconfig
+ln -s /usr/lib/python2.6/site-packages/amiconfig %{buildroot}/usr/lib/python2.6/site-packages/amiconfig
 mkdir -p %{buildroot}/etc/amiconfig
 cp %{_sourcedir}/default.cfg %{buildroot}/etc/amiconfig/
 
@@ -32,7 +32,6 @@ rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-/usr/lib/python/site-packages/*
 /usr/lib/python2.6/site-packages/amiconfig
 %{_sbindir}/amiconfig
 %{_sysconfdir}/amiconfig/default.cfg

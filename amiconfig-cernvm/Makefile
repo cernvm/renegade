@@ -5,7 +5,7 @@ include $(TOP)/generic.mk
 GIT_SRC = $(shell basename `cat source` | sed 's/\.git$$//')
 
 $(GIT_SRC): source
-	git clone `cat source`
+	#git clone `cat source`
 
 $(SOURCE_TARBALL): $(GIT_SRC) | $(RPMTOP)/SOURCES
 	cd $(GIT_SRC)/cernvm; \

@@ -30,7 +30,7 @@ rm -rf %{buildroot}
 
 %files
 %defattr(-,root,root,-)
-/usr/lib/python/site-packages/*
+/usr/lib/python2.6/site-packages/*
 /etc/init.d/*
 /usr/sbin/*
 /etc/amiconfig/hepix.cfg
