@@ -1,5 +1,6 @@
 /.ucernvm_bootstrap
 /.ucernvm_pinfiles
+/etc/locale.conf
 /etc/resolv.conf
 /etc/fstab
 /etc/workqueue.conf
