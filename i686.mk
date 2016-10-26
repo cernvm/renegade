@@ -17,11 +17,11 @@ $(UPSTREAM_RPM_64): version release
 	touch $(UPSTREAM_RPM_64)
 
 $(TREE_32): $(UPSTREAM_RPM_32)
-	mkdir $(TREE_32)
+	mkdir -p $(TREE_32)
 	cd $(TREE_32) && cat ../$(UPSTREAM_RPM_32) | rpm2cpio | cpio -id
 
 $(TREE_64): $(UPSTREAM_RPM_64)
-	mkdir $(TREE_64)
+	mkdir -p $(TREE_64)
 	cd $(TREE_64) && cat ../$(UPSTREAM_RPM_64) | rpm2cpio | cpio -id
 
 $(SOURCE_TARBALL): $(SOURCE_ROOT) version release | $(RPMTOP)/SOURCES
@@ -32,7 +32,7 @@ extraprovides:
 
 $(SOURCE_ROOT): $(TREE_32) $(TREE_64) extraprovides
 	rm -rf $(SOURCE_ROOT)
-	mkdir $(SOURCE_ROOT)
+	mkdir -p $(SOURCE_ROOT)
 	cd $(TREE_32) && gtar -cv -f - `for f in $$(find . ! -type d); do if [ ! -f ../$(TREE_64)/$$f ]; then echo -n "$$f "; fi; done` | \
 	  (cd ../`basename $(SOURCE_ROOT)` && gtar -xv -f -)
 
