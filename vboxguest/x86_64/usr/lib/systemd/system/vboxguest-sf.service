@@ -1,0 +1,12 @@
+[Unit]
+Description=VirtualBox guest additions
+After=local-fs.target vboxguest.service amiconfig.service
+Wants=local-fs.target vboxguest.service amiconfig.service
+
+[Service]
+Type=simple
+ExecStart=/etc/cernvm/service.d/vboxguest-sf
+
+[Install]
+WantedBy=multi-user.target
+
