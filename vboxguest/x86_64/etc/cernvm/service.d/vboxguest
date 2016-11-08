@@ -81,9 +81,9 @@ if [ ! -d /etc/cernvm/tools.d ]; then
 fi
 
 if [ -f /etc/cernvm/tools.d/virtualbox ]; then
-  modprobe vboxguest51
-  modprobe vboxsf51 
-  modprobe vboxvideo51
+  modprobe vboxguest
+  modprobe vboxsf
+  modprobe vboxvideo
   VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-set-threshold" 60000 >/dev/null 2>&1
   VBoxControl guestproperty set "/VirtualBox/GuestAdd/CheckHostVersion" 0 >/dev/null 2>&1
 fi
