@@ -84,7 +84,10 @@ if [ -f /etc/cernvm/tools.d/virtualbox ]; then
   modprobe vboxguest
   modprobe vboxsf
   modprobe vboxvideo
-  VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-set-threshold" 60000 >/dev/null 2>&1
+  VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-set-threshold" 1000 >/dev/null 2>&1
+  VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-interval" 10000 >/dev/null 2>&1
+  VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-min-adjust" 100 >/dev/null 2>&1
+  VBoxControl guestproperty set "/VirtualBox/GuestAdd/VBoxService/--timesync-set-on-restore" 1 >/dev/null 2>&1 
   VBoxControl guestproperty set "/VirtualBox/GuestAdd/CheckHostVersion" 0 >/dev/null 2>&1
 fi
 
