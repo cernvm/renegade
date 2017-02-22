@@ -1,4 +1,5 @@
 /etc/xdg/*
+/etc/skel/.vimrc
 /etc/skel/.config/*
 /usr/share/themes/CernVM
 /usr/share/icons/*
