@@ -23,8 +23,6 @@ PACKAGES = \
 	docker-cernvm \
 	ec2-api-tools \
 	ec2-ami-tools \
-	eos-client \
-	eos-fuse \
 	elastiq \
 	google-cloud-sdk \
 	lxdm \
