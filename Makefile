@@ -20,8 +20,6 @@ PACKAGES = \
 	cernvm-release \
 	cernvm-online-guest \
 	cernvm-update \
-	cvmfs \
-	cvmfs-devel \
 	copilot-agent \
 	copilot-jobmanager-generic \
 	copilot-util \
