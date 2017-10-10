@@ -32,6 +32,7 @@ PACKAGES = \
 	perl-Text-Aligner \
 	perl-Text-Table \
 	rpmrebuild \
+	shoal-client \
 	vaf-client \
 	vboxguest \
 	VBoxManage \
