@@ -2,4 +2,4 @@
 include $(TOP)/config.mk
 
 $(RPM):
-	wget -O $(RPM) http://repo.grid.iu.edu/osg/upcoming/el7/development/x86_64/$(NAME)-$(VERSION)-$(RELEASE).$(ARCH).rpm
+	wget -O $(RPM) http://linuxsoft.cern.ch/wlcg/centos7/x86_64/$(NAME)-$(VERSION)-$(RELEASE).$(ARCH).rpm
