@@ -1,5 +1,6 @@
 /.ucernvm_bootstrap
 /.ucernvm_pinfiles
+/etc/singularity/*
 /etc/locale.conf
 /etc/resolv.conf
 /etc/fstab
