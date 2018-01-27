@@ -68,6 +68,7 @@ PACKAGES = \
 	uriparser \
 	vaf-client \
 	vboxguest \
+	vboxguest52 \
 	VBoxManage \
 	WALinuxAgent \
 	vmware-tools-plugins-unity

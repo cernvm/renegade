@@ -187,8 +187,8 @@ start()
             chcon -h  -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1"
         fi
         echo "/var/lib/VBoxGuestAdditions/lib" > /etc/ld.so.conf.d/00vboxvideo.conf
+        ldconfig -n /var/lib/VBoxGuestAdditions/lib
     fi
-    ldconfig
 
     # Mount all shared folders from /etc/fstab. Normally this is done by some
     # other startup script but this requires the vboxdrv kernel module loaded.
@@ -226,10 +226,10 @@ create_vbox_user()
     # And for the others, we choose a UID ourselves
     useradd -d /var/run/"${owner}" -g 1 -u 501 -o -s /bin/false "${owner}" >/dev/null 2>&1
     # And create the group for the user device:
-    groupadd "${usergroup}"
+    groupadd "${usergroup}" >/dev/null 2>&1
     # VBoxClient needs to be setgid.
-    chown :"${usergroup}" "${INSTALL_DIR}/bin/VBoxClient"
-    chmod g+s "${INSTALL_DIR}/bin/VBoxClient"
+    chown :"${usergroup}" "${INSTALL_DIR}/usr/bin/VBoxClient"
+    chmod g+s "${INSTALL_DIR}/usr/bin/VBoxClient"
 }
 
 create_udev_rule()
@@ -273,13 +273,13 @@ shared_folder_setup()
     # itself instead of needing a separate binary to do that.
     ln -sf "${INSTALL_DIR}/sbin/mount.vboxsf" /sbin
     # SELinux security context for the mount helper.
-    if test -e /etc/selinux/config; then
+    if grep -q "SELINUX=enforcing" /etc/sysconfig/selinux 2>/dev/null; then
         # This is correct.  semanage maps this to the real path, and it aborts
         # with an error, telling you what you should have typed, if you specify
         # the real path.  The "chcon" is there as a back-up for old guests.
         command -v semanage > /dev/null &&
-            semanage fcontext -a -t mount_exec_t "${INSTALL_DIR}/other/mount.vboxsf"
-        chcon -t mount_exec_t "${INSTALL_DIR}/other/mount.vboxsf"
+            semanage fcontext -a -t mount_exec_t "${INSTALL_DIR}/sbin/mount.vboxsf"
+        chcon -t mount_exec_t "${INSTALL_DIR}/sbin/mount.vboxsf"
     fi
 }
 
