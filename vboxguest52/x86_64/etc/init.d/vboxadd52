@@ -181,10 +181,10 @@ start()
         # acceleration support check.  This prevents an "Oh no, something has gone
         # wrong!" error when starting EL7 guests.
         if test -e /etc/selinux/config; then
-            if command -v semanage > /dev/null; then
+            if grep -q "SELINUX=enforcing" /etc/sysconfig/selinux 2>/dev/null; then
                 semanage fcontext -a -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1"
+                chcon -h  -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1"
             fi
-            chcon -h  -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1"
         fi
         echo "/var/lib/VBoxGuestAdditions/lib" > /etc/ld.so.conf.d/00vboxvideo.conf
         ldconfig -n /var/lib/VBoxGuestAdditions/lib
