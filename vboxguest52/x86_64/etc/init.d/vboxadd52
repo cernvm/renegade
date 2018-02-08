@@ -182,8 +182,8 @@ start()
         # wrong!" error when starting EL7 guests.
         if test -e /etc/selinux/config; then
             if grep -q "SELINUX=enforcing" /etc/sysconfig/selinux 2>/dev/null; then
-                semanage fcontext -a -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1"
-                chcon -h  -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1"
+                semanage fcontext -a -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1" 2>/dev/null
+                chcon -h  -t lib_t "/var/lib/VBoxGuestAdditions/lib/libGL.so.1" 2>/dev/null
             fi
         fi
         echo "/var/lib/VBoxGuestAdditions/lib" > /etc/ld.so.conf.d/00vboxvideo.conf

@@ -33,4 +33,5 @@ elif test -z "${SSH_CONNECTION}"; then
   /usr/share/vboxguest52/usr/bin/VBoxClient --display
   /usr/share/vboxguest52/usr/bin/VBoxClient --seamless
   /usr/share/vboxguest52/usr/bin/VBoxClient --draganddrop
+  /usr/share/vboxguest52/usr/bin/cernvm_fix_auto_resize
 fi
