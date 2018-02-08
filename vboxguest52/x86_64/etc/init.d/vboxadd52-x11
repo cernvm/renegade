@@ -348,14 +348,14 @@ setup()
         echo "Installing $xserver_version modules" >&2
     case "$vboxvideo_src" in
         ?*)
-        ln -s "${lib_dir}/$vboxvideo_src" "$modules_dir/drivers/vboxvideo_drv$driver_ext.new" &&
+        ln -fs "${lib_dir}/$vboxvideo_src" "$modules_dir/drivers/vboxvideo_drv$driver_ext.new" &&
             mv "$modules_dir/drivers/vboxvideo_drv$driver_ext.new" "$modules_dir/drivers/vboxvideo_drv$driver_ext";;
         *)
         rm "$modules_dir/drivers/vboxvideo_drv$driver_ext" 2>/dev/null
     esac
     case "$vboxmouse_src" in
         ?*)
-        ln -s "${lib_dir}/$vboxmouse_src" "$modules_dir/input/vboxmouse_drv$driver_ext.new" &&
+        ln -fs "${lib_dir}/$vboxmouse_src" "$modules_dir/input/vboxmouse_drv$driver_ext.new" &&
             mv "$modules_dir/input/vboxmouse_drv$driver_ext.new" "$modules_dir/input/vboxmouse_drv$driver_ext";;
         *)
         rm "$modules_dir/input/vboxmouse_drv$driver_ext" 2>/dev/null
@@ -369,7 +369,7 @@ setup()
         test "$system" = "debian" -a -d /usr/share/xserver-xorg/pci &&
         {
             rm -f "/usr/share/xserver-xorg/pci/vboxvideo.ids"
-            ln -s "${lib_dir}/vboxvideo.ids" /usr/share/xserver-xorg/pci 2>/dev/null
+            ln -fs "${lib_dir}/vboxvideo.ids" /usr/share/xserver-xorg/pci 2>/dev/null
             test -n "$automouse" && setupxorgconf=""
         }
 
@@ -443,7 +443,7 @@ EOF
     # And set up VBoxClient to start when the X session does
     install_x11_startup_app "${lib_dir}/98vboxadd-xclient" "${lib_dir}/vboxclient.desktop" VBoxClient VBoxClient-all ||
         fail "Failed to set up VBoxClient to start automatically."
-    ln -s "${lib_dir}/98vboxadd-xclient" /usr/bin/VBoxClient-all 2>/dev/null
+    ln -fs "${lib_dir}/98vboxadd-xclient" /usr/bin/VBoxClient-all 2>/dev/null
 }
 
 dmnstatus()
