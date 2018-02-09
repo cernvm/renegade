@@ -8,7 +8,6 @@
 /etc/condor/*
 /etc/cvmfs/*
 /etc/init.d/*
-/etc/pam.d/*
 /etc/polkit-1/*
 /etc/squid/*
 /etc/profile.d/*
