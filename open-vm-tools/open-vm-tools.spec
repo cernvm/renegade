@@ -27,27 +27,39 @@ BuildRequires: gtkmm24-devel
 BuildRequires: libdnet-devel
 BuildRequires: libicu-devel
 BuildRequires: uriparser
+BuildRequires: xerces-c-devel
+BuildRequires: libmspack-devel
+BuildRequires: procps-devel
+BuildRequires: automake
+BuildRequires: autoconf
+BuildRequires: libtool
+BuildRequires: doxygen
 
 %description
 The open source version of VMware tools
 
 %prep
-%setup -q -n %{name}-%{version}-1280544
+%setup -q -n %{name}-%{name}-%{version}-3000743
 
 %build
+cd open-vm-tools
+autoreconf -i
 ./configure --prefix=/usr \
   --with-x \
+  --disable-tests \
   --without-kernel-modules \
   --without-root-privileges \
-  --libdir=/usr/lib64 
+  --without-xmlsecurity \
+  --libdir=/usr/lib64 \
+  --sysconfdir=/etc
 make %{?_smp_mflags}
 
 %install
+cd open-vm-tools
 make DESTDIR=%{buildroot} install
 
-
 rm -f %{buildroot}/sbin/mount.vmhgfs
-ln -s /usr/sbin/mount.vmhgfs %{buildroot}/sbin/mount.vmhgfs
+rm -f %{buildroot}/usr/sbin/mount.vmhgfs
 mkdir -p %{buildroot}/mnt/hgfs
 
 # vmtoolsd -- syncronizes time with host, responsible for "vmware tools installed"
@@ -58,9 +70,12 @@ chmod +x %{buildroot}/etc/init.d/vmware-guestd
 # Fix suspend script: service network stop does not work in uCernVM
 cd %{buildroot}/etc/vmware-tools/scripts/vmware
 patch < %{_sourcedir}/network.patch
-rm -f network.orig
 
 chmod u+s %{buildroot}/usr/bin/vmware-user-suid-wrapper
+
+mkdir -p %{buildroot}/etc/cernvm
+cp %{buildroot}/etc/xdg/autostart/vmware-user.desktop %{buildroot}/etc/cernvm/
+rm -rf %{buildroot}/etc/xdg
 
 %clean
 rm -rf %{buildroot}
@@ -70,17 +85,14 @@ rm -rf %{buildroot}
 %doc /usr/share/doc/*
 /usr/share/open-vm-tools
 /usr/bin/*
-/usr/etc/*
+/etc/cernvm/vmware-user.desktop
+/etc/pam.d/vmtoolsd
 /usr/include/*
 /usr/lib64/*
-/usr/sbin/*
-/sbin/*
 /etc/vmware-tools
 %dir /mnt/hgfs
 /etc/init.d/vmware-guestd
 
 %changelog
-* Mon May 15 2015 Jakob Blomer <jblomer@cern.ch> - 9.4.0-9
-- Ensure suid flag of vmware-user-suid-wrapper
-* Thu May 14 2013 Jakob Blomer <jblomer@cern.ch> - 9.2.3
-- Initial package
+* Thu Feb 08 2018 Jakob Blomer <jblomer@cern.ch> - 10.0.0-13
+- Backport from CernVM 4 to CernVM 3
