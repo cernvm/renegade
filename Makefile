@@ -32,9 +32,6 @@ PACKAGES = \
 	perl-Text-Aligner \
 	perl-Text-Table \
 	rpmrebuild \
-	singularity \
-	singularity-devel \
-	singularity-runtime \
 	shoal-client \
 	vaf-client \
 	vboxguest \
