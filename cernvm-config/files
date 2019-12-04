@@ -9,6 +9,7 @@
 /etc/*.cernvm
 /etc/cloud/*
 /etc/condor/*
+/etc/containerd/*
 /etc/cvmfs/*
 /etc/init.d/*
 /etc/polkit-1/localauthority/*
