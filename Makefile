@@ -20,7 +20,10 @@ PACKAGES = \
 	cernvm-waagent \
 	compat-xrootd-libs \
 	compat-xrootd-client-libs \
-	docker-cernvm \
+	container-selinux \
+	containerd.io \
+	docker-ce \
+	docker-ce-cli \
 	ec2-api-tools \
 	ec2-ami-tools \
 	elastiq \
