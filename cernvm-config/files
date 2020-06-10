@@ -7,10 +7,13 @@
 /etc/workqueue.conf
 /etc/lxdm/*
 /etc/*.cernvm
+/etc/auto.eos
+/etc/auto.master.d/*
 /etc/cloud/*
 /etc/condor/*
 /etc/containerd/*
 /etc/cvmfs/*
+/etc/eos/*
 /etc/init.d/*
 /etc/polkit-1/localauthority/*
 /etc/profile.d/*
