@@ -30,7 +30,12 @@ PACKAGES = \
 	ec2-ami-tools \
 	elastiq \
 	eos-client \
-	eos-fuse \
+	eos-fuse-core \
+	eos-fusex \
+	eos-fusex-core \
+	eos-fusex-selinux \
+	eos-protobuf3 \
+	eos-xrootd \
 	erlang \
 	glideinwms-vm-core \
 	glideinwms-vm-cernvm \
