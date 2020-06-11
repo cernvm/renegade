@@ -2,7 +2,9 @@
 TOP = $(shell pwd)
 include $(TOP)/params.mk
 
-PACKAGES = \
+PACKAGES = cernvm-config
+
+PACKAGES_ORIG = \
 	amiconfig-cernvm \
 	amiconfig-hepix \
 	amiconfig-rpath \
@@ -41,18 +43,13 @@ PACKAGES = \
 	VBoxManage \
 	vmware-tools-plugins-unity
 
-PACKAGES-32BIT = $(wildcard *-i686)
-
 default: all
 	$(MAKE) repo
 
 $(PACKAGES)::
 	$(MAKE) TOP=$(TOP) -C $@ $(MAKECMDGOALS)
 
-$(PACKAGES-32BIT)::
-	$(MAKE) TOP=$(TOP) -C $@ $(MAKECMDGOALS)
-
-all clean : $(PACKAGES) $(PACKAGES-32BIT)
+all clean : $(PACKAGES)
 
 repo: $(YUM_REPO)/repodata/repomd.xml
 $(YUM_REPO)/repodata/repomd.xml: $(wildcard $(YUM_REPO)/*.rpm)

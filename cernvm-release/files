@@ -1,3 +1,2 @@
 /etc/cernvm/service.d/cernvm-release
-/etc/yum.repos.d/*
 /usr/lib/systemd/system/cernvm-release.service

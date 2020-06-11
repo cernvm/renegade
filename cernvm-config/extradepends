@@ -1,2 +1,2 @@
-Requires: /usr/sbin/lspci
+Requires: pciutils
 Requires: diffutils
